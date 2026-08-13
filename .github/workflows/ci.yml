@@ -104,8 +104,10 @@ jobs:
 
       - name: Sign image (by digest)
         env:
-          COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}
+          COSIGN_PRIVATE_KEY_B64: ${{ secrets.COSIGN_PRIVATE_KEY }}
           COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
         run: |
-          cosign sign --yes --key env://COSIGN_PRIVATE_KEY \
+          echo "$COSIGN_PRIVATE_KEY_B64" | base64 -d > cosign.key
+          cosign sign --yes --key cosign.key \
             ghcr.io/${{ github.repository_owner }}/tickethub-${{ matrix.service }}@${{ steps.build.outputs.digest }}
+          rm -f cosign.key
