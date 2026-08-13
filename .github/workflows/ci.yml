@@ -106,7 +106,15 @@ jobs:
           COSIGN_PRIVATE_KEY_B64: ${{ secrets.COSIGN_PRIVATE_KEY }}
           COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
         run: |
-          echo "$COSIGN_PRIVATE_KEY_B64" | base64 -d > cosign.key
+          if [ -z "$COSIGN_PRIVATE_KEY_B64" ]; then
+            echo "::error::COSIGN_PRIVATE_KEY secret is empty or not set"; exit 1
+          fi
+          printf '%s' "$COSIGN_PRIVATE_KEY_B64" | base64 -d > cosign.key
+          echo "decoded key size: $(wc -c < cosign.key) bytes"
+          echo "first line: $(head -n1 cosign.key)"
+          if ! head -n1 cosign.key | grep -q 'BEGIN ENCRYPTED SIGSTORE PRIVATE KEY'; then
+            echo "::error::Decoded key is not a valid Cosign PEM. Re-set COSIGN_PRIVATE_KEY to the base64 of cosign.key"; exit 1
+          fi
           cosign sign --yes --key cosign.key \
             ghcr.io/${{ github.repository_owner }}/tickethub-${{ matrix.service }}@${{ steps.build.outputs.digest }}
           rm -f cosign.key
