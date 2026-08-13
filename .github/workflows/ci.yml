@@ -11,10 +11,12 @@ permissions:
 jobs:
   go:
     name: Go services
+    needs: [detect]
+    if: needs.detect.outputs.go_services != '[]'
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        service: [gateway, orders]
+        service: ${{ fromJSON(needs.detect.outputs.go_services) }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -29,6 +31,8 @@ jobs:
 
   python:
     name: Python stubs
+    needs: [detect]
+    if: needs.detect.outputs.run_python == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -42,6 +46,8 @@ jobs:
 
   frontend:
     name: Frontend build
+    needs: [detect]
+    if: needs.detect.outputs.run_frontend == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -68,51 +74,82 @@ jobs:
 
   detect:
     name: Detect changed services
-    # Only on pushes: compute which service directories actually changed so we
-    # build/sign/publish just those, not all 9 every time.
-    if: github.event_name == 'push'
+    # Compute which service dirs changed so we only build/sign/publish (and only
+    # test) what actually changed. Runs on push AND pull_request so PR checks are
+    # scoped too; diffs against the right base for each event.
     runs-on: ubuntu-latest
     outputs:
       services: ${{ steps.changed.outputs.services }}
+      go_services: ${{ steps.changed.outputs.go_services }}
+      run_python: ${{ steps.changed.outputs.run_python }}
+      run_frontend: ${{ steps.changed.outputs.run_frontend }}
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0        # need history to diff against the previous commit
+          fetch-depth: 0        # need history to diff against the base commit
       - id: changed
         run: |
           ALL="frontend gateway orders users catalog inventory payments notifications search"
-          BASE="${{ github.event.before }}"
-          # First push to a branch (or missing base): build everything.
+          GO_ALL="gateway orders"
+          PY_ALL="users catalog inventory payments notifications search"
+
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            BASE="${{ github.event.pull_request.base.sha }}"
+          else
+            BASE="${{ github.event.before }}"
+          fi
+          HEAD="${{ github.sha }}"
+
+          REBUILD_ALL=0
+          DIFF=""
           if [ -z "$BASE" ] || [ "$BASE" = "0000000000000000000000000000000000000000" ] || ! git cat-file -e "${BASE}^{commit}" 2>/dev/null; then
-            CHANGED="$ALL"
+            REBUILD_ALL=1                       # first push / unknown base: do everything
           else
-            DIFF=$(git diff --name-only "$BASE" "${{ github.sha }}")
-            # A change to the CI workflow itself rebuilds everything (so pipeline
-            # changes are actually exercised); otherwise match per-service dirs.
-            if echo "$DIFF" | grep -q '^.github/workflows/ci.yml$'; then
-              CHANGED="$ALL"
-            else
-              CHANGED=""
-              for s in $ALL; do
-                if echo "$DIFF" | grep -q "^repo/services/$s/"; then
-                  CHANGED="$CHANGED $s"
-                fi
-              done
-            fi
+            DIFF=$(git diff --name-only "$BASE" "$HEAD")
+            # A change to the CI workflow itself exercises the whole pipeline.
+            if echo "$DIFF" | grep -q '^.github/workflows/ci.yml$'; then REBUILD_ALL=1; fi
           fi
-          if [ -z "$CHANGED" ]; then
-            echo 'services=[]' >> "$GITHUB_OUTPUT"
+
+          if [ "$REBUILD_ALL" = "1" ]; then
+            CHANGED="$ALL"; GO_CHANGED="$GO_ALL"; RUN_PY=true; RUN_FE=true
           else
-            JSON=$(printf '%s\n' $CHANGED | jq -R . | jq -sc .)
-            echo "services=$JSON" >> "$GITHUB_OUTPUT"
+            CHANGED=""; GO_CHANGED=""; RUN_PY=false; RUN_FE=false
+            for s in $ALL; do
+              if echo "$DIFF" | grep -q "^repo/services/$s/"; then CHANGED="$CHANGED $s"; fi
+            done
+            for s in $GO_ALL; do
+              if echo "$DIFF" | grep -q "^repo/services/$s/"; then GO_CHANGED="$GO_CHANGED $s"; fi
+            done
+            for s in $PY_ALL; do
+              if echo "$DIFF" | grep -q "^repo/services/$s/"; then RUN_PY=true; fi
+            done
+            # python smoke tests live outside service dirs
+            if echo "$DIFF" | grep -q '^tests/'; then RUN_PY=true; fi
+            if echo "$DIFF" | grep -q '^repo/services/frontend/'; then RUN_FE=true; fi
           fi
-          echo "changed services: ${CHANGED:-<none>}"
+
+          json() { if [ -z "$1" ]; then echo '[]'; else printf '%s\n' $1 | jq -R . | jq -sc .; fi; }
+          {
+            echo "services=$(json "$CHANGED")"
+            echo "go_services=$(json "$GO_CHANGED")"
+            echo "run_python=$RUN_PY"
+            echo "run_frontend=$RUN_FE"
+          } >> "$GITHUB_OUTPUT"
+          echo "services: ${CHANGED:-<none>} | go: ${GO_CHANGED:-<none>} | python: $RUN_PY | frontend: $RUN_FE"
 
   images:
     name: Build & sign images
     # Only on pushes to main: never build/push/sign from pull requests (which may
     # come from forks and must not touch the registry or read signing secrets).
-    if: github.event_name == 'push' && needs.detect.outputs.services != '[]'
+    # always() + result checks so a *skipped* test job (its service didn't change)
+    # doesn't cascade-skip this job; a real test failure still blocks it.
+    if: >-
+      always() && !cancelled()
+      && github.event_name == 'push'
+      && needs.detect.outputs.services != '[]'
+      && needs.go.result != 'failure'
+      && needs.python.result != 'failure'
+      && needs.frontend.result != 'failure'
     needs: [go, python, frontend, detect]
     runs-on: ubuntu-latest
     permissions:
@@ -176,7 +213,11 @@ jobs:
     # don't accumulate one image + one .sig per commit forever. Only prunes the
     # services that were actually rebuilt this run.
     needs: [images, detect]
-    if: github.event_name == 'push' && needs.detect.outputs.services != '[]'
+    if: >-
+      always() && !cancelled()
+      && github.event_name == 'push'
+      && needs.detect.outputs.services != '[]'
+      && needs.images.result == 'success'
     runs-on: ubuntu-latest
     permissions:
       packages: write        # delete old package versions via GITHUB_TOKEN
