@@ -28,7 +28,7 @@ Kyverno is an **admission webhook**. Every create/update passes through it befor
 ### 22.3 Validate — block bad specs
 
 ```yaml
-# repo/manifests/60-security/kyverno-disallow-latest.yaml
+# repo/manifests/60-security/kyverno-policies.yaml (disallow-latest section)
 apiVersion: kyverno.io/v1
 kind: ClusterPolicy
 metadata:
@@ -50,7 +50,7 @@ spec:
 ### 22.4 Mutate — inject secure defaults
 
 ```yaml
-# repo/manifests/60-security/kyverno-default-securitycontext.yaml
+# repo/manifests/60-security/kyverno-policies.yaml (default-securitycontext section)
 apiVersion: kyverno.io/v1
 kind: ClusterPolicy
 metadata: { name: add-default-securitycontext }

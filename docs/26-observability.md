@@ -30,7 +30,7 @@ Prometheus **pulls** a `/metrics` endpoint from every target on an interval, sto
 Deployed via the **kube-prometheus-stack** Helm chart, which brings Prometheus, Alertmanager, Grafana, `node-exporter` (Chapter 11 DaemonSet), and `kube-state-metrics`. Services expose metrics and are discovered by a **ServiceMonitor**:
 
 ```yaml
-# repo/manifests/70-observability/orders-servicemonitor.yaml
+# repo/manifests/70-observability/orders-monitoring.yaml (ServiceMonitor section)
 apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
 metadata:
@@ -48,7 +48,7 @@ spec:
 A **PrometheusRule** turns metrics into alerts — this one uses the RED method (Rate, Errors, Duration):
 
 ```yaml
-# repo/manifests/70-observability/tickethub-alerts.yaml
+# repo/manifests/70-observability/orders-monitoring.yaml (PrometheusRule section)
 apiVersion: monitoring.coreos.com/v1
 kind: PrometheusRule
 metadata: { name: tickethub-slo, namespace: tickethub }

@@ -50,7 +50,7 @@ Chapter 10 built and scanned images. But how does the cluster know an image is *
 ![Image signing](assets/diagrams/24-image-signing.png)
 
 ```yaml
-# repo/manifests/60-security/kyverno-verify-images.yaml
+# repo/manifests/60-security/kyverno-policies.yaml (verify-images section)
 apiVersion: kyverno.io/v1
 kind: ClusterPolicy
 metadata: { name: verify-image-signatures }

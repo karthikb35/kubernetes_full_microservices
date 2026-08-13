@@ -12,7 +12,7 @@ Both ConfigMaps and Secrets inject into a pod the same two ways:
 - as **mounted files** in a volume.
 
 ```yaml
-# repo/manifests/40-config/orders-configmap.yaml
+# repo/manifests/40-config/configmaps.yaml
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -34,7 +34,8 @@ data:
 A **Secret** looks like a ConfigMap but is meant for sensitive values (DB passwords, API keys). Values are base64-encoded (**not** encryption on its own) and can be **encrypted at rest** in etcd (Chapter 24).
 
 ```yaml
-# repo/manifests/40-config/orders-secret.yaml  (illustrative — real values via ESO)
+# Illustrative only — NOT committed to Git. Real values are synced by the
+# External Secrets Operator (see external-secrets.yaml below).
 apiVersion: v1
 kind: Secret
 metadata:
@@ -87,7 +88,7 @@ Storing Secret YAML in Git (even encrypted) is fragile. The **External Secrets O
 ![External secrets](assets/diagrams/13-external-secrets.png)
 
 ```yaml
-# repo/manifests/40-config/orders-externalsecret.yaml
+# repo/manifests/40-config/external-secrets.yaml
 apiVersion: external-secrets.io/v1beta1
 kind: ExternalSecret
 metadata:

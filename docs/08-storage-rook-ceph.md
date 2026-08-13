@@ -82,7 +82,7 @@ spec:
 ### 8.4 Defining StorageClasses (the architect's catalog)
 
 ```yaml
-# repo/manifests/10-platform/storageclass-block.yaml
+# repo/manifests/10-platform/storageclasses.yaml
 apiVersion: storage.k8s.io/v1
 kind: StorageClass
 metadata:

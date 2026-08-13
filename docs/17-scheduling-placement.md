@@ -70,7 +70,7 @@ topologySpreadConstraints:
     whenUnsatisfiable: ScheduleAnyway
     labelSelector: { matchLabels: { app: catalog } }
 ---
-# repo/manifests/50-scaling/catalog-pdb.yaml
+# repo/manifests/50-scaling/pdb.yaml
 apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata: { name: catalog, namespace: tickethub }

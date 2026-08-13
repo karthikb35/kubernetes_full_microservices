@@ -28,7 +28,7 @@ A Service has a **selector** (`app: orders`). Kubernetes continuously maintains 
 The standard TicketHub Service is a plain **ClusterIP**:
 
 ```yaml
-# repo/manifests/30-workloads/orders-service.yaml
+# repo/manifests/30-workloads/orders-deployment.yaml (Service section)
 apiVersion: v1
 kind: Service
 metadata:
@@ -48,7 +48,7 @@ Now any pod resolves it by DNS: `http://orders.tickethub.svc.cluster.local` (or 
 A normal ClusterIP hides individual pods behind one VIP — but a Kafka client or a Postgres replica needs to reach **a specific pod**. A **headless** Service (`clusterIP: None`) returns the pod IPs directly and gives each StatefulSet pod stable DNS: `postgres-0.postgres.data.svc.cluster.local`.
 
 ```yaml
-# repo/manifests/20-data/postgres-headless-svc.yaml
+# repo/manifests/20-data/postgres-statefulset.yaml (headless Service section)
 apiVersion: v1
 kind: Service
 metadata:

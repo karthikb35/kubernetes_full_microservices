@@ -9,7 +9,7 @@ The first policy in every namespace denies all ingress and egress. From there yo
 ![Default deny](assets/diagrams/21-default-deny.png)
 
 ```yaml
-# repo/manifests/60-security/default-deny.yaml
+# repo/manifests/60-security/network-policies.yaml (default-deny section)
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -33,7 +33,7 @@ spec:
 A policy **selects target pods**, then whitelists **ingress sources** and **egress destinations** by label and port:
 
 ```yaml
-# repo/manifests/60-security/orders-netpol.yaml
+# repo/manifests/60-security/network-policies.yaml (orders-allow section)
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:

@@ -61,7 +61,7 @@ Understanding the **nesting** of resources is essential before deploying workloa
 - The **scheduler** places pods by comparing **requests** to each node's **allocatable** capacity.
 
 ```yaml
-# repo/manifests/00-namespaces/quota-tickethub.yaml
+# repo/manifests/00-namespaces/quota-limits.yaml
 apiVersion: v1
 kind: ResourceQuota
 metadata: { name: tickethub-quota, namespace: tickethub }
