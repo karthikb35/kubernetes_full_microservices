@@ -73,6 +73,29 @@ Put it together: north-south enters through the Ingress; east-west hops are serv
 
 Each arrow is a Service. That indirection is what lets pods scale, move, and fail without breaking callers.
 
+The **Gateway** service (`repo/services/gateway`) implements this routing as a Go reverse proxy. Upstream addresses are injected via environment variables — no hard-coded DNS names inside the binary:
+
+```go
+// repo/services/gateway/cmd/gateway/main.go (excerpt)
+ordersURL  := getEnv("ORDERS_URL",  "http://localhost:8081")
+catalogURL := getEnv("CATALOG_URL", "http://localhost:8082")
+
+mux.Handle("/api/orders/",  newProxy(ordersURL,  ""))
+mux.Handle("/api/catalog/", newProxy(catalogURL, ""))
+```
+
+In the cluster, the Deployment injects the real ClusterIP DNS names:
+
+```yaml
+env:
+  - name: ORDERS_URL
+    value: http://orders.tickethub.svc.cluster.local
+  - name: CATALOG_URL
+    value: http://catalog.tickethub.svc.cluster.local
+```
+
+Locally, you override them to point at whatever port your services are running on — no cluster required. This pattern (env-var upstreams, localhost fallback) is what makes the service runnable both `go run` on a laptop and inside Kubernetes without any code changes.
+
 !!! key "DNS-based service discovery is the contract"
     Services always address each other by **DNS name**, resolved by CoreDNS (Chapter 4).
     Hard-coding pod IPs, or even ClusterIPs, is an anti-pattern — names are stable across

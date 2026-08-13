@@ -46,16 +46,34 @@ EXPOSE 8080
 ENTRYPOINT ["/orders"]
 ```
 
-And the **Frontend** (Node) service, same pattern with an NGINX runtime:
+The **API Gateway** (Go) follows the same distroless pattern — it's a pure stdlib reverse proxy so the final image has zero external dependencies:
+
+```dockerfile
+# repo/services/gateway/Dockerfile
+FROM golang:1.22 AS builder
+WORKDIR /src
+COPY go.mod go.sum ./
+RUN go mod download
+COPY . .
+RUN CGO_ENABLED=0 go build -o /out/gateway ./cmd/gateway
+
+FROM gcr.io/distroless/static:nonroot
+COPY --from=builder /out/gateway /gateway
+USER 65532:65532
+EXPOSE 8080
+ENTRYPOINT ["/gateway"]
+```
+
+And the **Frontend** (Node/React) service, build → unprivileged NGINX runtime:
 
 ```dockerfile
 # repo/services/frontend/Dockerfile
 FROM node:20-alpine AS build
 WORKDIR /app
 COPY package*.json ./
-RUN npm ci                          # reproducible, uses lockfile
+RUN npm install                     # installs deps from package.json
 COPY . .
-RUN npm run build
+RUN npm run build                   # Vite produces dist/
 
 FROM nginxinc/nginx-unprivileged:1.27-alpine   # runs as non-root by design
 COPY --from=build /app/dist /usr/share/nginx/html
@@ -151,6 +169,47 @@ imagePullSecrets:
     Git never sees the plaintext token. The manifest in the repo is only the
     **ServiceAccount attachment** — the Secret itself is created out-of-band.
 
+### 10.6 Running services locally
+
+All three runnable services can be started on a development machine without Docker or a cluster. Each reads its upstream addresses from environment variables and falls back to `localhost` defaults.
+
+**Orders** (Go — with Prometheus metrics + OpenTelemetry tracing):
+
+```bash
+cd repo/services/orders
+go mod tidy          # resolve indirect deps on first run
+go run ./cmd/orders  # listens :8080 (API) and :9090 (metrics)
+```
+
+Test: `curl http://localhost:8080/healthz` → `ok`  
+Test: `curl http://localhost:8080/api/orders` → JSON stub response
+
+**Gateway** (Go — pure stdlib reverse proxy):
+
+```bash
+cd repo/services/gateway
+# Point at wherever orders/catalog are running:
+export ORDERS_URL=http://localhost:8080
+export CATALOG_URL=http://localhost:8082   # stub if catalog isn't running
+go run ./cmd/gateway                        # listens :8080 (gateway port)
+```
+
+Test: `curl http://localhost:8080/healthz` → `ok`  
+Test: `curl http://localhost:8080/api/orders` → proxied to orders service
+
+**Frontend** (React + Vite):
+
+```bash
+cd repo/services/frontend
+npm install          # first time only
+npm run dev          # Vite dev server on :3000, proxies /api → gateway :8080
+```
+
+Open `http://localhost:3000` — the UI has two tabs: **Events** (calls `/api/catalog/events`) and **Orders** (calls `/api/orders`). If the backend isn't running, each tab shows a clear "could not reach service" error rather than a blank page.
+
+!!! tip "Full local stack"
+    Run orders on `:8081`, gateway on `:8080` pointing `ORDERS_URL=http://localhost:8081`, then `npm run dev` for the frontend. The Vite proxy handles CORS automatically in dev — no browser changes needed.
+
 !!! success "Chapter 10 checklist"
     - Every service uses a **multi-stage** Dockerfile; SDK excluded from runtime.
     - Runtime base is **distroless/alpine**, running as a **non-root `USER`**.
@@ -159,5 +218,6 @@ imagePullSecrets:
     - Deploys reference an **immutable tag/digest**, never `latest`.
     - Images live in the **private registry**; nodes pull with an **imagePullSecret**
       attached to the namespace **ServiceAccount**.
+    - **Gateway** and **Frontend** are fully runnable locally (`go run` / `npm run dev`).
 
 ---
