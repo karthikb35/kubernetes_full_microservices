@@ -77,6 +77,8 @@ jobs:
       contents: read
       packages: write        # push images to GHCR via GITHUB_TOKEN
     strategy:
+      fail-fast: false
+      max-parallel: 2
       matrix:
         service: [frontend, gateway, orders, users, catalog, inventory, payments, notifications, search]
     steps:
@@ -115,6 +117,13 @@ jobs:
           if ! head -n1 cosign.key | grep -q 'BEGIN ENCRYPTED SIGSTORE PRIVATE KEY'; then
             echo "::error::Decoded key is not a valid Cosign PEM. Re-set COSIGN_PRIVATE_KEY to the base64 of cosign.key"; exit 1
           fi
-          cosign sign --yes --key cosign.key \
-            ghcr.io/${{ github.repository_owner }}/tickethub-${{ matrix.service }}@${{ steps.build.outputs.digest }}
+          IMG="ghcr.io/${{ github.repository_owner }}/tickethub-${{ matrix.service }}@${{ steps.build.outputs.digest }}"
+          for attempt in 1 2 3 4 5; do
+            if cosign sign --yes --key cosign.key "$IMG"; then
+              signed=1; break
+            fi
+            echo "sign attempt $attempt failed (likely GHCR rate limit); backing off..."
+            sleep $((attempt * 20))
+          done
           rm -f cosign.key
+          [ "${signed:-0}" = "1" ] || { echo "::error::cosign sign failed after retries"; exit 1; }
