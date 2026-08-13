@@ -127,3 +127,31 @@ jobs:
           done
           rm -f cosign.key
           [ "${signed:-0}" = "1" ] || { echo "::error::cosign sign failed after retries"; exit 1; }
+
+  cleanup-images:
+    name: Prune old GHCR versions
+    # Runs after images are built & signed; deletes stale versions so packages
+    # don't accumulate one image + one .sig per commit forever.
+    needs: [images]
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write        # delete old package versions via GITHUB_TOKEN
+    strategy:
+      fail-fast: false
+      matrix:
+        service: [frontend, gateway, orders, users, catalog, inventory, payments, notifications, search]
+    steps:
+      - name: Delete untagged versions
+        uses: actions/delete-package-versions@v5
+        with:
+          package-name: tickethub-${{ matrix.service }}
+          package-type: container
+          delete-only-untagged-versions: 'true'
+
+      - name: Keep only the most recent versions
+        uses: actions/delete-package-versions@v5
+        with:
+          package-name: tickethub-${{ matrix.service }}
+          package-type: container
+          min-versions-to-keep: 10   # ~5 recent image + .sig pairs
