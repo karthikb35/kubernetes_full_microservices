@@ -1,0 +1,18 @@
+# TicketHub — CA trust distribution (Ch 7A).
+#
+# trust-manager (cert-manager companion) publishes the internal root CA as a
+# ConfigMap into EVERY namespace, so any workload can validate certs issued by
+# the tickethub-internal CA without manual copying. Clients mount the ConfigMap
+# key ca.crt as their trust anchor.
+apiVersion: trust.cert-manager.io/v1alpha1
+kind: Bundle
+metadata:
+  name: tickethub-ca
+spec:
+  sources:
+    - secret:
+        name: tickethub-root-ca
+        key: tls.crt
+  target:
+    configMap:
+      key: ca.crt              # -> ConfigMap "tickethub-ca" in all namespaces

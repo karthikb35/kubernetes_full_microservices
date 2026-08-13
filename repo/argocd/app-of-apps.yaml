@@ -1,0 +1,46 @@
+# Argo CD app-of-apps: one root Application manages the whole platform,
+# encoding the Chapter 9 bootstrap order as sync waves (Ch 28).
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: tickethub-root
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+spec:
+  project: default
+  source:
+    repoURL: https://git.internal/tickethub/platform.git
+    targetRevision: main
+    path: repo/argocd/apps          # directory of child Applications
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions: [CreateNamespace=true]
+---
+# Example child Application (workloads, wave 9 = last).
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: tickethub-workloads
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "9"
+spec:
+  project: default
+  source:
+    repoURL: https://git.internal/tickethub/platform.git
+    targetRevision: main
+    path: repo/manifests/30-workloads
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: tickethub
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions: [CreateNamespace=true]

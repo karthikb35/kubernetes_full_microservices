@@ -1,0 +1,15 @@
+# Velero scheduled backup of app + data namespaces, incl. PV snapshots (Ch 27).
+apiVersion: velero.io/v1
+kind: Schedule
+metadata:
+  name: daily-tickethub
+  namespace: velero
+spec:
+  schedule: "0 2 * * *"            # 02:00 daily
+  template:
+    includedNamespaces:
+      - tickethub
+      - data
+    snapshotVolumes: true          # CSI-snapshot the Ceph PVs
+    ttl: 720h0m0s                  # retain 30 days
+    storageLocation: default       # object store (Ceph RGW / S3)

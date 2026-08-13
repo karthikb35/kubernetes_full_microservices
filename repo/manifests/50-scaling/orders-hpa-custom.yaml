@@ -1,0 +1,25 @@
+# TicketHub — orders HPA on a custom metric (Ch 16).
+#
+# Scales orders on requests-per-second (served via prometheus-adapter) instead
+# of CPU. Requires prometheus-adapter-config.yaml and the orders /metrics
+# endpoint + ServiceMonitor (Ch 26).
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: orders
+  namespace: tickethub
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: orders
+  minReplicas: 3
+  maxReplicas: 30
+  metrics:
+    - type: Pods
+      pods:
+        metric: { name: http_requests_per_second }
+        target: { type: AverageValue, averageValue: "50" }   # ~50 rps per pod
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 300

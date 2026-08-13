@@ -1,0 +1,26 @@
+# Custom Falco rules for TicketHub, layered on the default ruleset (Ch 23).
+# Deployed via the Falco Helm chart (DaemonSet) in the 'security' namespace.
+customRules:
+  tickethub-rules.yaml: |-
+    - rule: Shell spawned in TicketHub container
+      desc: A shell was executed inside an application pod - likely compromise
+      condition: >
+        spawned_process and container
+        and proc.name in (bash, sh, zsh, ash)
+        and k8s.ns.name = "tickethub"
+      output: >
+        Shell in container (pod=%k8s.pod.name ns=%k8s.ns.name
+        cmd=%proc.cmdline user=%user.name)
+      priority: WARNING
+      tags: [container, shell, mitre_execution]
+
+    - rule: Write below sensitive dir in TicketHub
+      desc: Unexpected write to /etc or /bin inside an app pod
+      condition: >
+        open_write and container
+        and k8s.ns.name = "tickethub"
+        and (fd.name startswith /etc or fd.name startswith /bin)
+      output: >
+        Sensitive write (pod=%k8s.pod.name file=%fd.name proc=%proc.name)
+      priority: ERROR
+      tags: [filesystem, mitre_persistence]

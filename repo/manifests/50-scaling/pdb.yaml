@@ -1,0 +1,20 @@
+# PodDisruptionBudgets — keep a minimum running during drains/upgrades (Ch 17).
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: catalog
+  namespace: tickethub
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels: { app: catalog }
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: orders
+  namespace: tickethub
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels: { app: orders }

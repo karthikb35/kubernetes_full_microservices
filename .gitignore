@@ -1,0 +1,11 @@
+# Python bytecode
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Generated build output
+*.pdf
+
+# OS junk
+.DS_Store
+Thumbs.db

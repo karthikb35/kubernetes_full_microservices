@@ -1,0 +1,27 @@
+# TicketHub — cluster PKI init config (Ch 7A, used at `kubeadm init` time).
+#
+# NOT applied with kubectl. This is passed to `kubeadm init --config` on cp-1 so
+# the generated apiserver.crt carries every name a client might use — most
+# importantly the HAProxy VIP. Getting certSANs right BEFORE init avoids the
+# classic HA outage where calls through the load balancer fail TLS.
+apiVersion: kubeadm.k8s.io/v1beta3
+kind: ClusterConfiguration
+kubernetesVersion: v1.30.0
+controlPlaneEndpoint: "10.10.0.10:6443"    # the HAProxy VIP (Ch 3)
+networking:
+  podSubnet: "10.244.0.0/16"               # Cilium (Ch 4)
+  serviceSubnet: "10.96.0.0/12"
+apiServer:
+  certSANs:
+    - "10.10.0.10"                # VIP        <-- the one everyone forgets
+    - "api.tickethub.internal"    # stable DNS for the VIP
+    - "cp-1"
+    - "cp-2"
+    - "cp-3"
+    - "10.10.0.11"                # cp-1
+    - "10.10.0.12"                # cp-2
+    - "10.10.0.13"                # cp-3
+etcd:
+  local:
+    serverCertSANs: ["10.10.0.11", "10.10.0.12", "10.10.0.13"]
+    peerCertSANs:   ["10.10.0.11", "10.10.0.12", "10.10.0.13"]

@@ -1,0 +1,53 @@
+# Kyverno policies as code — validate, mutate, verify images (Ch 22, 24).
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: disallow-latest-tag
+spec:
+  validationFailureAction: Enforce      # start Audit, then Enforce
+  background: true
+  rules:
+    - name: require-image-tag
+      match:
+        any: [{ resources: { kinds: [Pod] } }]
+      validate:
+        message: "Images must use an immutable tag or digest, not latest."
+        pattern:
+          spec:
+            containers:
+              - image: "!*:latest"
+---
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: add-default-securitycontext
+spec:
+  rules:
+    - name: default-seccomp
+      match:
+        any: [{ resources: { kinds: [Pod], namespaces: [tickethub] } }]
+      mutate:
+        patchStrategicMerge:
+          spec:
+            securityContext:
+              seccompProfile: { type: RuntimeDefault }
+---
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: verify-image-signatures
+spec:
+  validationFailureAction: Enforce
+  rules:
+    - name: verify-tickethub-images
+      match:
+        any: [{ resources: { kinds: [Pod] } }]
+      verifyImages:
+        - imageReferences: ["registry.internal/tickethub/*"]
+          attestors:
+            - entries:
+                - keys:
+                    publicKeys: |-
+                      -----BEGIN PUBLIC KEY-----
+                      REPLACE_WITH_COSIGN_PUBLIC_KEY
+                      -----END PUBLIC KEY-----

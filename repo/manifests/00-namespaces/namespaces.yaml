@@ -1,0 +1,44 @@
+# Namespaces for TicketHub, with team + Pod Security Admission labels (Ch 9, 20).
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: tickethub
+  labels:
+    team: app
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/enforce-version: latest
+    pod-security.kubernetes.io/warn: restricted
+    pod-security.kubernetes.io/audit: restricted
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: data
+  labels:
+    team: data
+    pod-security.kubernetes.io/enforce: baseline
+    pod-security.kubernetes.io/warn: baseline
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: platform
+  labels:
+    team: platform
+    pod-security.kubernetes.io/enforce: baseline
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: monitoring
+  labels:
+    team: platform
+    pod-security.kubernetes.io/enforce: baseline
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: security
+  labels:
+    team: platform
+    pod-security.kubernetes.io/enforce: privileged   # Falco needs host access

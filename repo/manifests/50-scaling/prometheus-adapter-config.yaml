@@ -1,0 +1,20 @@
+# TicketHub — prometheus-adapter rules (Ch 16).
+#
+# prometheus-adapter (Helm: prometheus-community/prometheus-adapter) serves the
+# custom.metrics.k8s.io API so an HPA can scale on Prometheus metrics. This maps
+# the orders service's http_requests_total counter (exposed per Ch 26) into a
+# per-pod rate named http_requests_per_second.
+#
+# In the Helm values this block lives under `rules.custom`.
+rules:
+  custom:
+    - seriesQuery: 'http_requests_total{namespace!="",pod!=""}'
+      resources:
+        overrides:
+          namespace: { resource: namespace }
+          pod:       { resource: pod }
+      name:
+        matches: "http_requests_total"
+        as: "http_requests_per_second"
+      # Counter -> current per-pod rate. Never expose the raw counter to HPA.
+      metricsQuery: 'sum(rate(<<.Series>>{<<.LabelMatchers>>}[2m])) by (<<.GroupBy>>)'

@@ -1,0 +1,24 @@
+# TicketHub — per-service internal certificate (Ch 7A).
+#
+# All replicas of the orders Deployment share this one Secret: the SAN is the
+# Service DNS name, which covers every replica behind it. The wildcard SAN
+# additionally covers per-pod names, so the same pattern works if orders is
+# ever addressed as individual StatefulSet pods (Ch 14).
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: orders-tls
+  namespace: tickethub
+spec:
+  secretName: orders-tls                 # mounted by ALL orders replicas
+  duration: 2160h                        # 90 days; cert-manager auto-renews
+  renewBefore: 360h                      # 15 days before expiry
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+  dnsNames:
+    - orders.tickethub.svc.cluster.local                 # the Service (all replicas)
+    - "*.orders-headless.tickethub.svc.cluster.local"    # per-pod names (StatefulSet HA)
+  issuerRef:
+    name: tickethub-internal
+    kind: ClusterIssuer

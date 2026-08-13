@@ -1,0 +1,13 @@
+# VPA for the search service — recommend-only (safe default, Ch 16).
+apiVersion: autoscaling.k8s.io/v1
+kind: VerticalPodAutoscaler
+metadata:
+  name: search
+  namespace: tickethub
+spec:
+  targetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: search
+  updatePolicy:
+    updateMode: "Off"          # "Off" = emit recommendations, do not auto-apply

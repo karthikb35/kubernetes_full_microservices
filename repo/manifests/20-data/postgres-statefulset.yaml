@@ -1,0 +1,56 @@
+# Postgres — StatefulSet with per-pod storage + headless Service (Ch 12, 14).
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+  namespace: data
+  labels: { app: postgres }
+spec:
+  clusterIP: None                  # headless: stable per-pod DNS
+  selector: { app: postgres }
+  ports: [{ port: 5432 }]
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres
+  namespace: data
+spec:
+  serviceName: postgres
+  replicas: 3
+  selector:
+    matchLabels: { app: postgres }
+  template:
+    metadata:
+      labels: { app: postgres }
+    spec:
+      terminationGracePeriodSeconds: 60
+      containers:
+        - name: postgres
+          image: postgres:16
+          ports: [{ containerPort: 5432 }]
+          env:
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef: { name: postgres-db, key: password }
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+          resources:
+            requests: { cpu: "500m", memory: 1Gi }
+            limits:   { cpu: "2", memory: 4Gi }
+          readinessProbe:
+            exec: { command: ["pg_isready", "-U", "postgres"] }
+            initialDelaySeconds: 10
+            periodSeconds: 10
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: [ReadWriteOnce]
+        storageClassName: rook-ceph-block   # reclaimPolicy: Retain (Ch 8)
+        resources:
+          requests:
+            storage: 20Gi

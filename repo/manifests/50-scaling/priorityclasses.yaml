@@ -1,0 +1,24 @@
+# PriorityClasses — who wins scheduling and preemption when the cluster is full (Ch 17).
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: payments-critical
+value: 100000
+globalDefault: false
+description: "Revenue-critical services (payments, orders, gateway); may preempt batch work."
+---
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: standard-app
+value: 1000
+globalDefault: true
+description: "Default tier for stateless TicketHub services."
+---
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: batch-low
+value: 100
+globalDefault: false
+description: "Reports, reindex, migrations; first to be preempted."

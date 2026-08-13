@@ -1,0 +1,21 @@
+# Schema migration as a Job — runs to completion before the app rolls out (Ch 11).
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: orders-db-migrate
+  namespace: tickethub
+spec:
+  backoffLimit: 3
+  template:
+    metadata:
+      labels: { app: orders-migrate }
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: migrate
+          image: registry.internal/tickethub/orders-migrate:v1
+          command: ["/migrate", "up"]
+          env:
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef: { name: orders-db, key: DB_PASSWORD }

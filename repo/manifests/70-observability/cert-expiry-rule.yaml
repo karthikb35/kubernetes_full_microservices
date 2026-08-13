@@ -1,0 +1,28 @@
+# TicketHub — control-plane certificate expiry alerting (Ch 7A + Ch 26).
+#
+# Requires the x509-certificate-exporter (DaemonSet on control-plane nodes)
+# reading /etc/kubernetes/pki. Pages the platform team WEEKS before any
+# control-plane cert expires, because an expired apiserver/etcd cert is a full
+# cluster outage that kubectl cannot recover.
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: certificate-expiry
+  namespace: monitoring
+spec:
+  groups:
+    - name: pki.rules
+      rules:
+        - alert: ControlPlaneCertExpiringSoon
+          expr: (x509_cert_not_after - time()) / 86400 < 21    # < 3 weeks left
+          for: 1h
+          labels: { severity: page }
+          annotations:
+            summary: "Control-plane certificate expires in under 21 days"
+            description: "{{ $labels.subject_CN }} on {{ $labels.node }} expires soon."
+        - alert: ControlPlaneCertExpired
+          expr: (x509_cert_not_after - time()) < 0
+          for: 5m
+          labels: { severity: critical }
+          annotations:
+            summary: "A control-plane certificate has EXPIRED — cluster outage risk"

@@ -1,0 +1,34 @@
+# North-South entrypoint: NGINX Ingress routing to TicketHub services (Ch 7).
+# TLS terminated here via cert-manager (Ch 18). The Ingress controller's Service
+# is type=LoadBalancer and gets its external IP from the MetalLB pool.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: tickethub
+  namespace: tickethub
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts: [tickethub.example.com]
+      secretName: tickethub-tls
+  rules:
+    - host: tickethub.example.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: frontend
+                port:
+                  number: 80
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: gateway
+                port:
+                  number: 8080

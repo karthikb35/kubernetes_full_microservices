@@ -1,0 +1,58 @@
+# Orders service — Deployment + ClusterIP Service (Ch 11-12).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: orders
+  namespace: tickethub
+  labels: { app: orders }
+spec:
+  replicas: 3
+  selector:
+    matchLabels: { app: orders }
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  template:
+    metadata:
+      labels: { app: orders }
+    spec:
+      containers:
+        - name: orders
+          image: registry.internal/tickethub/orders:v1
+          ports:
+            - { name: http, containerPort: 8080 }
+            - { name: metrics, containerPort: 9090 }
+          envFrom:
+            - configMapRef: { name: orders-config }
+          env:
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef: { name: orders-db, key: DB_PASSWORD }
+            # Traces -> collector -> Tempo (Ch 26).
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: "otel-collector.monitoring.svc.cluster.local:4317"
+          resources:
+            requests: { cpu: "150m", memory: 192Mi }
+            limits:   { cpu: "750m", memory: 768Mi }
+          readinessProbe:
+            httpGet: { path: /readyz, port: 8080 }
+            initialDelaySeconds: 3
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: { path: /healthz, port: 8080 }
+            initialDelaySeconds: 10
+            periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: orders
+  namespace: tickethub
+spec:
+  selector: { app: orders }
+  ports:
+    - { name: http, port: 80, targetPort: 8080 }
+    # Named 'metrics' so the ServiceMonitor (Ch 26) can scrape it.
+    - { name: metrics, port: 9090, targetPort: 9090 }

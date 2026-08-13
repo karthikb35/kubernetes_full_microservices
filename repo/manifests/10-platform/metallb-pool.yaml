@@ -1,0 +1,22 @@
+# MetalLB address pool + L2 advertisement (Ch 7).
+# Range must match VLAN 20 from the Chapter 4 IP plan and NOT overlap node/pod/service CIDRs.
+apiVersion: metallb.io/v1beta1
+kind: IPAddressPool
+metadata:
+  name: tickethub-pool
+  namespace: metallb-system
+spec:
+  addresses:
+    - 10.20.0.100-10.20.0.200
+  autoAssign: true
+---
+apiVersion: metallb.io/v1beta1
+kind: L2Advertisement
+metadata:
+  name: tickethub-l2
+  namespace: metallb-system
+spec:
+  ipAddressPools:
+    - tickethub-pool
+# For production multi-node load distribution, replace L2Advertisement with a
+# BGPAdvertisement and peer the speakers with the data-center router.

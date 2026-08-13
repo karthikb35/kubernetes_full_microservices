@@ -1,0 +1,31 @@
+# StorageClasses = the architect's storage catalog (Ch 8).
+
+# GOLD tier: Ceph RBD block storage for databases (RWO, retain, expandable).
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: rook-ceph-block
+provisioner: rook-ceph.rbd.csi.ceph.com
+parameters:
+  clusterID: rook-ceph
+  pool: replicapool
+  imageFormat: "2"
+  imageFeatures: layering
+  csi.storage.k8s.io/fstype: ext4
+reclaimPolicy: Retain
+allowVolumeExpansion: true
+volumeBindingMode: WaitForFirstConsumer
+---
+# SHARED tier: CephFS for ReadWriteMany (shared uploads, multi-pod).
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: rook-cephfs
+provisioner: rook-ceph.cephfs.csi.ceph.com
+parameters:
+  clusterID: rook-ceph
+  fsName: tickethub-fs
+  pool: tickethub-fs-data0
+reclaimPolicy: Delete
+allowVolumeExpansion: true
+volumeBindingMode: Immediate

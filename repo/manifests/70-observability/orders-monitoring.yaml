@@ -1,0 +1,41 @@
+# Prometheus scrape config + SLO alerts for TicketHub (Ch 26).
+# Assumes kube-prometheus-stack (Prometheus Operator) is installed.
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: orders
+  namespace: tickethub
+  labels: { release: kube-prometheus-stack }
+spec:
+  selector:
+    matchLabels: { app: orders }
+  endpoints:
+    - port: metrics
+      interval: 15s
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: tickethub-slo
+  namespace: tickethub
+  labels: { release: kube-prometheus-stack }
+spec:
+  groups:
+    - name: tickethub.rules
+      rules:
+        - alert: OrdersHighErrorRate
+          expr: |
+            sum(rate(http_requests_total{app="orders",code=~"5.."}[5m]))
+              / sum(rate(http_requests_total{app="orders"}[5m])) > 0.02
+          for: 5m
+          labels: { severity: page }
+          annotations:
+            summary: "Orders 5xx error rate above 2% for 5m"
+        - alert: OrdersHighLatency
+          expr: |
+            histogram_quantile(0.99,
+              sum(rate(http_request_duration_seconds_bucket{app="orders"}[5m])) by (le)) > 1
+          for: 10m
+          labels: { severity: page }
+          annotations:
+            summary: "Orders p99 latency above 1s for 10m"

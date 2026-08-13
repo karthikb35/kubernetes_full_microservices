@@ -1,0 +1,56 @@
+# Rook-Ceph cluster on the tainted 'data' node pool (Ch 8).
+# Rook operator must already be installed (Helm chart rook-release/rook-ceph).
+apiVersion: ceph.rook.io/v1
+kind: CephCluster
+metadata:
+  name: rook-ceph
+  namespace: rook-ceph
+spec:
+  cephVersion:
+    image: quay.io/ceph/ceph:v18.2
+  dataDirHostPath: /var/lib/rook
+  mon:
+    count: 3                    # odd quorum, like etcd
+    allowMultiplePerNode: false
+  mgr:
+    count: 2
+  dashboard:
+    enabled: true
+    ssl: true
+  storage:
+    useAllNodes: false
+    useAllDevices: false
+    nodes:
+      - name: worker-data-1
+        devices:
+          - name: "nvme1n1"
+      - name: worker-data-2
+        devices:
+          - name: "nvme1n1"
+      - name: worker-data-3
+        devices:
+          - name: "nvme1n1"
+  placement:
+    all:
+      tolerations:
+        - key: data
+          operator: Exists
+          effect: NoSchedule
+      nodeAffinity:
+        requiredDuringSchedulingIgnoredDuringExecution:
+          nodeSelectorTerms:
+            - matchExpressions:
+                - key: pool
+                  operator: In
+                  values: [data]
+---
+# Replicated block pool backing the rook-ceph-block StorageClass.
+apiVersion: ceph.rook.io/v1
+kind: CephBlockPool
+metadata:
+  name: replicapool
+  namespace: rook-ceph
+spec:
+  failureDomain: host
+  replicated:
+    size: 3                     # 3 copies across 3 hosts
