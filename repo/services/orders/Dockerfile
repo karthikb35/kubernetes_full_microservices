@@ -1,6 +1,6 @@
 # TicketHub Orders service — multi-stage, distroless, non-root (Ch 10).
 # ---- Stage 1: build ----
-FROM golang:1.22 AS builder
+FROM golang:1.25 AS builder
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
