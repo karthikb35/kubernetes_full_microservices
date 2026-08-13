@@ -62,4 +62,6 @@ jobs:
       - name: kubeconform
         uses: docker://ghcr.io/yannh/kubeconform:latest
         with:
-          args: -summary -ignore-missing-schemas repo/manifests/
+          # prometheus-adapter-config.yaml and falco-rules.yaml are Helm *values*
+          # fragments (no kind), not Kubernetes objects — skip them.
+          args: -summary -ignore-missing-schemas -ignore-filename-pattern prometheus-adapter-config.yaml -ignore-filename-pattern falco-rules.yaml repo/manifests/

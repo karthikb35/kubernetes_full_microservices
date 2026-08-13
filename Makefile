@@ -15,7 +15,7 @@ test: ## Run Go unit tests and Python stub smoke tests
 	python -m unittest tests/smoke_services.py
 
 lint: ## Validate Kubernetes manifests (requires kubeconform)
-	kubeconform -summary -ignore-missing-schemas repo/manifests/
+	kubeconform -summary -ignore-missing-schemas -ignore-filename-pattern prometheus-adapter-config.yaml -ignore-filename-pattern falco-rules.yaml repo/manifests/
 
 pdf: ## Build the textbook PDF
 	pip install -q markdown xhtml2pdf Pillow
