@@ -35,6 +35,16 @@ repo/
 The `argocd/` folder holds the app-of-apps that delivers all of the above via
 GitOps sync waves (Chapter 28).
 
+## Per-manifest documentation
+
+Every `*.yaml` under `manifests/` has a sibling `*.md` that explains what the
+manifest is, the objects it defines, and — with a color-coded relationship
+diagram — how it interacts with the other pods, services, secrets, and policies
+in the cluster. Each doc also links to the relevant textbook chapter. Open the
+`.md` next to any manifest (for example
+[`20-data/postgres-statefulset.md`](manifests/20-data/postgres-statefulset.md))
+to start.
+
 ## Apply order (manual)
 
 ```bash

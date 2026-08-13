@@ -1365,3 +1365,379 @@ flowchart TB
   NOTE["The complete TicketHub stack, bottom to top: from physical hardware<br/>to GitOps-delivered, secured, observable microservices."]
 """ + PALETTE
 
+# ===========================================================================
+# MANIFEST DOCS — one relationship diagram per repo/manifests/*.yaml file.
+# Keyed "mf-<folder>-<name>"; embedded by the per-manifest README.md docs.
+# ===========================================================================
+
+DIAGRAMS["mf-00-namespaces"] = T + """
+flowchart TB
+  subgraph CLUSTER["Cluster — 5 namespaces (Ch 9, 20)"]
+    direction LR
+    TH["tickethub<br/>team=app<br/>PSA restricted"]:::svc
+    DA["data<br/>team=data<br/>PSA baseline"]:::data
+    PL["platform<br/>team=platform<br/>PSA baseline"]:::plat
+    MO["monitoring<br/>team=platform<br/>PSA baseline"]:::plat
+    SE["security<br/>team=platform<br/>PSA privileged"]:::edge
+  end
+  APP["App workloads +<br/>quota + netpol"]:::svc --> TH
+  STORE["Postgres + Kafka"]:::data --> DA
+  SEC["Falco (host access)"]:::edge --> SE
+""" + PALETTE
+
+DIAGRAMS["mf-00-quota-limits"] = T + """
+flowchart LR
+  RQ["ResourceQuota tickethub-quota<br/>cpu 40/80, mem 80/160Gi<br/>pods 200, pvc 50, LB 2"]:::plat
+  LRG["LimitRange tickethub-defaults<br/>default 100m/128Mi<br/>max 4CPU/8Gi"]:::plat
+  NS["namespace: tickethub"]:::svc
+  POD["Every new Pod:<br/>gets defaults, then capped"]:::edge
+  RQ --> NS
+  LRG --> NS
+  NS --> POD
+""" + PALETTE
+
+DIAGRAMS["mf-10-ceph-cluster"] = T + """
+flowchart LR
+  CC["CephCluster rook-ceph<br/>3 mon / 2 mgr<br/>worker-data-1/2/3 (nvme)"]:::plat
+  BP["CephBlockPool replicapool<br/>replicated size 3"]:::data
+  SC["StorageClass<br/>rook-ceph-block"]:::edge
+  PVC["StatefulSet PVCs<br/>postgres / kafka"]:::data
+  CC --> BP --> SC --> PVC
+""" + PALETTE
+
+DIAGRAMS["mf-10-cert-manager-issuers"] = T + """
+flowchart LR
+  ST["ClusterIssuer<br/>letsencrypt-staging"]:::plat
+  PR["ClusterIssuer<br/>letsencrypt (prod)"]:::plat
+  ING["Ingress tickethub<br/>annotation: cluster-issuer"]:::edge
+  ACME["Let's Encrypt ACME<br/>HTTP-01 via nginx"]:::user
+  SEC["Secret tickethub-tls"]:::data
+  ING --> PR --> ACME
+  ACME --> SEC --> ING
+""" + PALETTE
+
+DIAGRAMS["mf-10-ingress-tickethub"] = T + """
+flowchart LR
+  U["Client HTTPS"]:::user
+  LB["MetalLB LB IP"]:::edge
+  ING["Ingress tickethub<br/>host tickethub.example.com<br/>TLS: tickethub-tls"]:::edge
+  FE["Service frontend:80"]:::svc
+  GW["Service gateway:8080"]:::svc
+  U --> LB --> ING
+  ING -->|"/"| FE
+  ING -->|"/api"| GW
+""" + PALETTE
+
+DIAGRAMS["mf-10-metallb-pool"] = T + """
+flowchart LR
+  POOL["IPAddressPool tickethub-pool<br/>10.20.0.100-200"]:::plat
+  L2["L2Advertisement<br/>tickethub-l2"]:::edge
+  SVC["Service type<br/>LoadBalancer"]:::svc
+  NET["VLAN 20 (ARP)"]:::user
+  POOL --> SVC
+  L2 --> NET
+  SVC -->|"external IP assigned"| NET
+""" + PALETTE
+
+DIAGRAMS["mf-10-registry-pull-secret"] = T + """
+flowchart LR
+  SA["ServiceAccount default<br/>ns: tickethub"]:::plat
+  PS["imagePullSecret<br/>registry-internal"]:::data
+  POD["Every pod in tickethub"]:::svc
+  REG["registry.internal<br/>private registry"]:::edge
+  POD -->|"inherits SA"| SA --> PS
+  POD -->|"authenticated pull"| REG
+""" + PALETTE
+
+DIAGRAMS["mf-10-storageclasses"] = T + """
+flowchart LR
+  B["StorageClass rook-ceph-block<br/>RBD, Retain, WaitForFirstConsumer"]:::edge
+  F["StorageClass rook-cephfs<br/>CephFS, Delete, RWX"]:::edge
+  RBD["ceph rbd csi"]:::plat
+  CFS["ceph cephfs csi"]:::plat
+  PVCB["Block PVCs (postgres, kafka)"]:::data
+  PVCF["Shared RWX PVCs"]:::data
+  B --> RBD --> PVCB
+  F --> CFS --> PVCF
+""" + PALETTE
+
+DIAGRAMS["mf-15-internal-ca"] = T + """
+flowchart LR
+  SS["ClusterIssuer<br/>selfsigned-root"]:::plat
+  CA["Certificate tickethub-root-ca<br/>10y ECDSA"]:::edge
+  SEC["Secret tickethub-root-ca<br/>ns cert-manager"]:::data
+  ISS["ClusterIssuer<br/>tickethub-internal"]:::plat
+  LEAF["Leaf certs (orders-tls)<br/>+ trust bundle"]:::svc
+  SS --> CA --> SEC --> ISS --> LEAF
+""" + PALETTE
+
+DIAGRAMS["mf-15-orders-internal-cert"] = T + """
+flowchart LR
+  ISS["ClusterIssuer<br/>tickethub-internal"]:::plat
+  CERT["Certificate orders-tls<br/>SAN orders.tickethub.svc<br/>*.orders-headless..."]:::edge
+  SEC["Secret orders-tls"]:::data
+  DEP["Deployment orders<br/>internal TLS cert"]:::svc
+  ISS --> CERT --> SEC --> DEP
+""" + PALETTE
+
+DIAGRAMS["mf-15-trust-bundle"] = T + """
+flowchart LR
+  SRC["Secret tickethub-root-ca<br/>key tls.crt"]:::data
+  B["Bundle tickethub-ca<br/>(trust-manager)"]:::plat
+  CM["ConfigMap tickethub-ca<br/>key ca.crt — ALL namespaces"]:::edge
+  POD["Pods mount ca.crt<br/>to trust internal TLS"]:::svc
+  SRC --> B --> CM --> POD
+""" + PALETTE
+
+DIAGRAMS["mf-20-postgres-statefulset"] = T + """
+flowchart LR
+  SEC["Secret postgres-db<br/>key password"]:::plat
+  STS["StatefulSet postgres<br/>3 replicas, postgres:16"]:::data
+  PVC["PVC data per pod<br/>rook-ceph-block 20Gi"]:::data
+  SVC["Service postgres<br/>headless :5432"]:::svc
+  ORD["orders + db-migrate<br/>clients"]:::edge
+  SEC --> STS
+  STS --> PVC
+  STS --> SVC
+  ORD -->|":5432"| SVC
+""" + PALETTE
+
+DIAGRAMS["mf-20-kafka-statefulset"] = T + """
+flowchart LR
+  STS["StatefulSet kafka<br/>3 replicas, bitnami/kafka:3.7"]:::evt
+  PVC["PVC data per pod<br/>rook-ceph-block 50Gi"]:::data
+  SVC["Service kafka<br/>headless :9092"]:::svc
+  CFG["orders-config<br/>KAFKA_BROKERS"]:::plat
+  KEDA["KEDA notifications<br/>lag trigger"]:::edge
+  STS --> PVC
+  STS --> SVC
+  CFG -->|"kafka-0..2.kafka.data:9092"| SVC
+  KEDA -->|"consumer lag"| SVC
+""" + PALETTE
+
+DIAGRAMS["mf-30-catalog-deployment"] = T + """
+flowchart LR
+  CM["ConfigMap catalog-config<br/>envFrom"]:::plat
+  DEP["Deployment catalog<br/>3 replicas :8080<br/>RollingUpdate maxUnavail 0"]:::svc
+  SVC["Service catalog<br/>ClusterIP 80->8080"]:::edge
+  HPA["HPA catalog"]:::plat
+  PDB["PDB catalog<br/>minAvailable 2"]:::plat
+  CM --> DEP --> SVC
+  HPA -->|"scales"| DEP
+  PDB -->|"protects"| DEP
+""" + PALETTE
+
+DIAGRAMS["mf-30-db-migrate-job"] = T + """
+flowchart LR
+  SEC["Secret orders-db<br/>DB_PASSWORD"]:::data
+  JOB["Job orders-db-migrate<br/>migrate up<br/>backoffLimit 3, restart Never"]:::plat
+  PG["Postgres (ns data)"]:::data
+  SEC --> JOB
+  JOB -->|"apply schema"| PG
+""" + PALETTE
+
+DIAGRAMS["mf-30-orders-deployment"] = T + """
+flowchart LR
+  CM["orders-config"]:::plat
+  SEC["Secret orders-db"]:::data
+  DEP["Deployment orders<br/>3 replicas http:8080 metrics:9090"]:::svc
+  SVC["Service orders<br/>80->8080, 9090"]:::edge
+  OTEL["otel-collector :4317"]:::evt
+  SM["ServiceMonitor orders"]:::plat
+  HPA["HPA orders"]:::plat
+  CM --> DEP
+  SEC --> DEP
+  DEP --> SVC
+  DEP -->|"traces"| OTEL
+  SM -->|"scrape 9090"| DEP
+  HPA -->|"scales"| DEP
+""" + PALETTE
+
+DIAGRAMS["mf-40-configmaps"] = T + """
+flowchart LR
+  OC["ConfigMap orders-config<br/>LOG_LEVEL, PAYMENTS_URL, KAFKA_BROKERS"]:::plat
+  CC["ConfigMap catalog-config<br/>LOG_LEVEL, SEARCH_URL"]:::plat
+  ORD["Deployment orders (envFrom)"]:::svc
+  CAT["Deployment catalog (envFrom)"]:::svc
+  OC --> ORD
+  CC --> CAT
+""" + PALETTE
+
+DIAGRAMS["mf-40-external-secrets"] = T + """
+flowchart LR
+  VAULT["Vault (ClusterSecretStore<br/>vault-backend)"]:::user
+  ES1["ExternalSecret orders-db<br/>ns tickethub"]:::plat
+  ES2["ExternalSecret postgres-db<br/>ns data"]:::plat
+  S1["Secret orders-db"]:::data
+  S2["Secret postgres-db"]:::data
+  C1["orders Deploy + migrate Job"]:::svc
+  C2["postgres StatefulSet"]:::svc
+  VAULT --> ES1 --> S1 --> C1
+  VAULT --> ES2 --> S2 --> C2
+""" + PALETTE
+
+DIAGRAMS["mf-50-catalog-hpa"] = T + """
+flowchart LR
+  M["metrics-server<br/>CPU utilization"]:::plat
+  HPA["HPA catalog<br/>min 3 / max 20<br/>target CPU 70%"]:::edge
+  DEP["Deployment catalog"]:::svc
+  M --> HPA -->|"adjust replicas"| DEP
+""" + PALETTE
+
+DIAGRAMS["mf-50-notifications-keda"] = T + """
+flowchart LR
+  KAFKA["Kafka topic ticket-events<br/>consumerGroup notifications"]:::evt
+  SO["ScaledObject notifications<br/>min 0 / max 30<br/>lagThreshold 100"]:::edge
+  DEP["Deployment notifications"]:::svc
+  KAFKA -->|"consumer lag"| SO -->|"scale (incl. to zero)"| DEP
+""" + PALETTE
+
+DIAGRAMS["mf-50-orders-hpa-custom"] = T + """
+flowchart LR
+  SM["ServiceMonitor orders<br/>http_requests_total"]:::plat
+  PA["prometheus-adapter<br/>-> http_requests_per_second"]:::plat
+  HPA["HPA orders<br/>min 3 / max 30<br/>target 50 rps/pod"]:::edge
+  DEP["Deployment orders"]:::svc
+  SM --> PA --> HPA -->|"scales"| DEP
+""" + PALETTE
+
+DIAGRAMS["mf-50-pdb"] = T + """
+flowchart LR
+  DRAIN["Node drain / upgrade"]:::edge
+  PDBC["PDB catalog<br/>minAvailable 2"]:::plat
+  PDBO["PDB orders<br/>minAvailable 2"]:::plat
+  CAT["catalog pods"]:::svc
+  ORD["orders pods"]:::svc
+  DRAIN -->|"blocked if <2"| PDBC --> CAT
+  DRAIN -->|"blocked if <2"| PDBO --> ORD
+""" + PALETTE
+
+DIAGRAMS["mf-50-priorityclasses"] = T + """
+flowchart TB
+  PC1["payments-critical<br/>value 100000"]:::data
+  PC2["standard-app<br/>value 1000 (default)"]:::svc
+  PC3["batch-low<br/>value 100"]:::edge
+  SCHED["Scheduler:<br/>higher value wins,<br/>preempts lower on pressure"]:::plat
+  PC1 --> SCHED
+  PC2 --> SCHED
+  PC3 --> SCHED
+""" + PALETTE
+
+DIAGRAMS["mf-50-prometheus-adapter-config"] = T + """
+flowchart LR
+  PROM["Prometheus<br/>http_requests_total (counter)"]:::plat
+  ADP["prometheus-adapter rule<br/>sum(rate(...[2m]))"]:::edge
+  API["custom.metrics.k8s.io<br/>http_requests_per_second"]:::plat
+  HPA["HPA orders"]:::svc
+  PROM --> ADP --> API --> HPA
+""" + PALETTE
+
+DIAGRAMS["mf-50-search-vpa"] = T + """
+flowchart LR
+  HIST["usage history"]:::plat
+  VPA["VPA search<br/>updateMode: Off<br/>(recommend only)"]:::edge
+  REC["recommended<br/>requests/limits"]:::data
+  DEP["Deployment search<br/>(applied manually)"]:::svc
+  HIST --> VPA --> REC -.->|"human review"| DEP
+""" + PALETTE
+
+DIAGRAMS["mf-60-falco-rules"] = T + """
+flowchart LR
+  SYS["Kernel syscalls<br/>(every node)"]:::plat
+  DS["Falco DaemonSet<br/>ns security (privileged)"]:::edge
+  R1["Rule: shell in tickethub pod"]:::data
+  R2["Rule: write to /etc /bin"]:::data
+  ALERT["Alert / audit sink"]:::user
+  SYS --> DS
+  DS --> R1 --> ALERT
+  DS --> R2 --> ALERT
+""" + PALETTE
+
+DIAGRAMS["mf-60-kyverno-policies"] = T + """
+flowchart LR
+  REQ["kubectl apply Pod"]:::user
+  ADM["Kyverno admission webhook"]:::edge
+  P1["disallow-latest-tag<br/>(enforce)"]:::data
+  P2["add-default-securitycontext<br/>(mutate)"]:::plat
+  P3["verify-image-signatures<br/>(cosign)"]:::data
+  OK["Pod admitted"]:::svc
+  REQ --> ADM
+  ADM --> P1
+  ADM --> P2
+  ADM --> P3 --> OK
+""" + PALETTE
+
+DIAGRAMS["mf-60-network-policies"] = T + """
+flowchart LR
+  DENY["default-deny-all<br/>all pods ingress+egress"]:::data
+  GW["gateway pods"]:::edge
+  ORD["orders pods"]:::svc
+  PAY["payments pods"]:::svc
+  PG["postgres (ns data)"]:::data
+  DNS["kube-dns :53"]:::plat
+  GW -->|"ingress :8080"| ORD
+  ORD -->|"egress :8080"| PAY
+  ORD -->|"egress :5432"| PG
+  ORD -->|"egress"| DNS
+""" + PALETTE
+
+DIAGRAMS["mf-60-orders-rbac"] = T + """
+flowchart LR
+  SA["ServiceAccount orders-sa<br/>automount: false"]:::plat
+  RB["RoleBinding<br/>orders-reader-binding"]:::plat
+  ROLE["Role orders-reader<br/>get/list/watch configmaps"]:::edge
+  API["kube-apiserver (RBAC)"]:::data
+  SA --> RB --> ROLE
+  SA -->|"token"| API
+  API -->|"allow configmaps read"| ROLE
+""" + PALETTE
+
+DIAGRAMS["mf-70-cert-expiry-rule"] = T + """
+flowchart LR
+  EXP["x509-certificate-exporter<br/>reads /etc/kubernetes/pki"]:::plat
+  PROM["Prometheus<br/>x509_cert_not_after"]:::edge
+  RULE["PrometheusRule<br/>certificate-expiry"]:::data
+  AM["Alertmanager<br/>ExpiringSoon (<21d) / Expired"]:::user
+  EXP --> PROM --> RULE --> AM
+""" + PALETTE
+
+DIAGRAMS["mf-70-node-exporter-daemonset"] = T + """
+flowchart LR
+  HOST["Host / (ro) -> /host"]:::plat
+  DS["DaemonSet node-exporter<br/>hostNetwork :9100<br/>tolerations: Exists"]:::edge
+  N1["every node<br/>(incl. tainted)"]:::svc
+  PROM["Prometheus scrape"]:::data
+  HOST --> DS --> N1
+  DS -->|"node metrics"| PROM
+""" + PALETTE
+
+DIAGRAMS["mf-70-orders-monitoring"] = T + """
+flowchart LR
+  DEP["Deployment orders<br/>:9090 /metrics"]:::svc
+  SM["ServiceMonitor orders<br/>interval 15s"]:::plat
+  PROM["Prometheus"]:::edge
+  RULE["PrometheusRule tickethub-slo<br/>error rate / p99 latency"]:::data
+  AM["Alertmanager"]:::user
+  DEP --> SM --> PROM --> RULE --> AM
+""" + PALETTE
+
+DIAGRAMS["mf-70-otel-collector-tempo"] = T + """
+flowchart LR
+  ORD["Deployment orders<br/>OTLP export"]:::svc
+  OC["otel-collector (2 replicas)<br/>:4317 batch+memlimit"]:::edge
+  TEMPO["tempo :4317<br/>trace storage"]:::data
+  GRAF["Grafana / query :3200"]:::user
+  ORD -->|"OTLP gRPC"| OC --> TEMPO --> GRAF
+""" + PALETTE
+
+DIAGRAMS["mf-70-velero-schedule"] = T + """
+flowchart LR
+  SCH["Schedule daily-tickethub<br/>0 2 * * * , ttl 30d"]:::plat
+  NS1["ns tickethub"]:::svc
+  NS2["ns data (Postgres/Kafka)"]:::data
+  SNAP["CSI volume snapshots<br/>(Ceph)"]:::edge
+  OBJ["object store<br/>(default location)"]:::user
+  SCH --> NS1 --> OBJ
+  SCH --> NS2 --> SNAP --> OBJ
+""" + PALETTE
+
