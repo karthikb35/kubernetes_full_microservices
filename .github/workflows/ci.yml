@@ -66,12 +66,54 @@ jobs:
           # fragments (no kind), not Kubernetes objects — skip them.
           args: -summary -ignore-missing-schemas -ignore-filename-pattern prometheus-adapter-config.yaml -ignore-filename-pattern falco-rules.yaml repo/manifests/
 
+  detect:
+    name: Detect changed services
+    # Only on pushes: compute which service directories actually changed so we
+    # build/sign/publish just those, not all 9 every time.
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    outputs:
+      services: ${{ steps.changed.outputs.services }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0        # need history to diff against the previous commit
+      - id: changed
+        run: |
+          ALL="frontend gateway orders users catalog inventory payments notifications search"
+          BASE="${{ github.event.before }}"
+          # First push to a branch (or missing base): build everything.
+          if [ -z "$BASE" ] || [ "$BASE" = "0000000000000000000000000000000000000000" ] || ! git cat-file -e "${BASE}^{commit}" 2>/dev/null; then
+            CHANGED="$ALL"
+          else
+            DIFF=$(git diff --name-only "$BASE" "${{ github.sha }}")
+            # A change to the CI workflow itself rebuilds everything (so pipeline
+            # changes are actually exercised); otherwise match per-service dirs.
+            if echo "$DIFF" | grep -q '^.github/workflows/ci.yml$'; then
+              CHANGED="$ALL"
+            else
+              CHANGED=""
+              for s in $ALL; do
+                if echo "$DIFF" | grep -q "^repo/services/$s/"; then
+                  CHANGED="$CHANGED $s"
+                fi
+              done
+            fi
+          fi
+          if [ -z "$CHANGED" ]; then
+            echo 'services=[]' >> "$GITHUB_OUTPUT"
+          else
+            JSON=$(printf '%s\n' $CHANGED | jq -R . | jq -sc .)
+            echo "services=$JSON" >> "$GITHUB_OUTPUT"
+          fi
+          echo "changed services: ${CHANGED:-<none>}"
+
   images:
     name: Build & sign images
     # Only on pushes to main: never build/push/sign from pull requests (which may
     # come from forks and must not touch the registry or read signing secrets).
-    if: github.event_name == 'push'
-    needs: [go, python, frontend]
+    if: github.event_name == 'push' && needs.detect.outputs.services != '[]'
+    needs: [go, python, frontend, detect]
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -80,7 +122,7 @@ jobs:
       fail-fast: false
       max-parallel: 2
       matrix:
-        service: [frontend, gateway, orders, users, catalog, inventory, payments, notifications, search]
+        service: ${{ fromJSON(needs.detect.outputs.services) }}
     steps:
       - uses: actions/checkout@v4
 
@@ -131,16 +173,17 @@ jobs:
   cleanup-images:
     name: Prune old GHCR versions
     # Runs after images are built & signed; deletes stale versions so packages
-    # don't accumulate one image + one .sig per commit forever.
-    needs: [images]
-    if: github.event_name == 'push'
+    # don't accumulate one image + one .sig per commit forever. Only prunes the
+    # services that were actually rebuilt this run.
+    needs: [images, detect]
+    if: github.event_name == 'push' && needs.detect.outputs.services != '[]'
     runs-on: ubuntu-latest
     permissions:
       packages: write        # delete old package versions via GITHUB_TOKEN
     strategy:
       fail-fast: false
       matrix:
-        service: [frontend, gateway, orders, users, catalog, inventory, payments, notifications, search]
+        service: ${{ fromJSON(needs.detect.outputs.services) }}
     steps:
       - name: Delete untagged versions
         uses: actions/delete-package-versions@v5
