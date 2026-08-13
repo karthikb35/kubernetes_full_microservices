@@ -9,3 +9,7 @@ __pycache__/
 # OS junk
 .DS_Store
 Thumbs.db
+
+# Cosign signing keys — NEVER commit the private key
+cosign.key
+*.key
