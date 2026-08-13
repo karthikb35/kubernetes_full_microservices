@@ -62,6 +62,8 @@ jobs:
 
   manifests:
     name: Validate manifests
+    needs: [detect]
+    if: needs.detect.outputs.run_manifests == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -83,6 +85,7 @@ jobs:
       go_services: ${{ steps.changed.outputs.go_services }}
       run_python: ${{ steps.changed.outputs.run_python }}
       run_frontend: ${{ steps.changed.outputs.run_frontend }}
+      run_manifests: ${{ steps.changed.outputs.run_manifests }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -111,9 +114,9 @@ jobs:
           fi
 
           if [ "$REBUILD_ALL" = "1" ]; then
-            CHANGED="$ALL"; GO_CHANGED="$GO_ALL"; RUN_PY=true; RUN_FE=true
+            CHANGED="$ALL"; GO_CHANGED="$GO_ALL"; RUN_PY=true; RUN_FE=true; RUN_MF=true
           else
-            CHANGED=""; GO_CHANGED=""; RUN_PY=false; RUN_FE=false
+            CHANGED=""; GO_CHANGED=""; RUN_PY=false; RUN_FE=false; RUN_MF=false
             for s in $ALL; do
               if echo "$DIFF" | grep -q "^repo/services/$s/"; then CHANGED="$CHANGED $s"; fi
             done
@@ -126,6 +129,7 @@ jobs:
             # python smoke tests live outside service dirs
             if echo "$DIFF" | grep -q '^tests/'; then RUN_PY=true; fi
             if echo "$DIFF" | grep -q '^repo/services/frontend/'; then RUN_FE=true; fi
+            if echo "$DIFF" | grep -q '^repo/manifests/'; then RUN_MF=true; fi
           fi
 
           json() { if [ -z "$1" ]; then echo '[]'; else printf '%s\n' $1 | jq -R . | jq -sc .; fi; }
@@ -134,8 +138,9 @@ jobs:
             echo "go_services=$(json "$GO_CHANGED")"
             echo "run_python=$RUN_PY"
             echo "run_frontend=$RUN_FE"
+            echo "run_manifests=$RUN_MF"
           } >> "$GITHUB_OUTPUT"
-          echo "services: ${CHANGED:-<none>} | go: ${GO_CHANGED:-<none>} | python: $RUN_PY | frontend: $RUN_FE"
+          echo "services: ${CHANGED:-<none>} | go: ${GO_CHANGED:-<none>} | python: $RUN_PY | frontend: $RUN_FE | manifests: $RUN_MF"
 
   images:
     name: Build & sign images
