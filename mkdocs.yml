@@ -1,9 +1,10 @@
 site_name: "TicketHub — Kubernetes Cluster Architecture"
 site_description: "A Cluster Architect's Textbook — designing, installing and operating a production Kubernetes cluster around the TicketHub microservices platform"
 site_author: "TicketHub Engineering"
+site_url: https://karthikb35.github.io/kubernetes_full_microservices/
 docs_dir: docs
 site_dir: site
-repo_url: https://github.com/karthik-k8s/kubernetes_full_microservices
+repo_url: https://github.com/karthikb35/kubernetes_full_microservices
 repo_name: kubernetes_full_microservices
 edit_uri: edit/main/docs/
 
@@ -132,5 +133,5 @@ nav:
 extra:
   social:
     - icon: fontawesome/brands/github
-      link: https://github.com/karthik-k8s/kubernetes_full_microservices
+      link: https://github.com/karthikb35/kubernetes_full_microservices
   generator: false
