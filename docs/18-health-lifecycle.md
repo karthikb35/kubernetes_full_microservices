@@ -95,6 +95,26 @@ lifecycle:
     drain active requests, then exit. The `preStop sleep` covers the brief race between
     endpoint removal and the load balancer noticing.
 
+
+### 18.5 Nuances, Gotchas & Architect Considerations
+
+!!! tip "Nuances — subtle behaviours to internalise"
+    - **All three probe types use the same failure threshold logic** (`failureThreshold × periodSeconds`) but serve different purposes: liveness kills and restarts the container; readiness removes it from Service endpoints (no restart); startup suppresses liveness during the startup window. A wrong probe type causes the wrong behavior — a liveness probe that triggers during a traffic spike causes a restart cascade instead of graceful back-pressure.
+    - **`preStop` hook runs concurrently with SIGTERM in some container runtimes**: the hook is not guaranteed to complete before SIGTERM is sent in all cases. If your shutdown sequence depends on the hook finishing first (e.g., draining a connection pool before accepting SIGTERM), add a `sleep` in the hook equal to your expected drain time as a belt-and-suspenders measure.
+    - **Rolling update `maxSurge` and `maxUnavailable` are evaluated as a PAIR**: with `maxUnavailable: 0` and `maxSurge: 1`, the update creates one new pod and waits for it to pass readiness before killing one old pod. The deployment is always at full capacity — ideal for zero-downtime. With `maxUnavailable: 1` and `maxSurge: 0`, it kills one pod first, then creates a replacement — briefly drops below capacity.
+
+!!! warning "Gotchas — traps that catch experienced engineers"
+    - **Liveness probe too aggressive during GC pauses**: a JVM doing a full GC may pause for 5-10 seconds. If `liveness.timeoutSeconds: 1` and `failureThreshold: 3`, the container is killed after ~3 seconds of GC — causing a restart loop under load. Set `timeoutSeconds: 5` and `failureThreshold: 3` (15s total) for JVM services.
+    - **Readiness probe checking downstream dependencies**: a readiness probe that calls `SELECT 1` on Postgres means a Postgres outage marks ALL orders pods as unready — removing them from the Service endpoint and returning 503 to users even though the pods themselves are healthy. Check local health only in readiness probes; check downstream health in separate alerts.
+    - **`terminationGracePeriodSeconds: 0`** for "fast" rolling updates: this kills containers immediately on SIGTERM with no grace period. In-flight requests are dropped. Always allow enough time for connection draining: `terminationGracePeriodSeconds` ≥ the longest expected request duration + 5s buffer.
+
+!!! question "Architect Considerations"
+    1. **Startup probe vs `initialDelaySeconds`**: `initialDelaySeconds` is a blunt instrument — it delays all probes by a fixed time regardless of actual startup progress. `startupProbe` is smarter: it polls until the app is actually ready, then hands off to liveness/readiness. Always use `startupProbe` for services with variable startup times (JVM warm-up, schema migrations).
+    2. **Probe granularity**: a `/healthz` endpoint that returns 200 is not meaningful if it doesn't actually test the service's ability to serve traffic. Define three layers: `/healthz` (process alive — for liveness), `/readyz` (can serve requests — for readiness, checks DB connection pool), `/startupz` (initialization complete — for startup probe).
+    3. **Rolling update speed vs risk**: `maxUnavailable: 0, maxSurge: 1` is safest (never below capacity) but slowest (one pod at a time). `maxUnavailable: 25%, maxSurge: 25%` is 4× faster but briefly runs at 75% capacity. Size your `minReplicas` so that `replicas × (1 - maxUnavailable)` still meets your RPS SLO during rollout.
+    4. **Blue/green vs rolling for schema-breaking changes**: a rolling deployment of a service with a breaking API change means old and new versions serve traffic simultaneously. If the API break is a response field rename, clients see inconsistency. Use blue/green (create a separate Deployment, switch Service selector atomically) for schema-breaking changes.
+    5. **Canary with traffic splitting**: Argo Rollouts or Flagger can send 5% of traffic to the new version (canary) and automatically roll back if the error rate exceeds a threshold. This is the production-safe deployment strategy for TicketHub's payments path — zero-risk progressive delivery.
+
 !!! success "Chapter 18 checklist — Part IV complete"
     - **startup / readiness / liveness** probes each defined for their distinct job.
     - Liveness tests **only the process**; dependency health lives in **readiness**.

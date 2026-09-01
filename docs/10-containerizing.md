@@ -210,6 +210,26 @@ Open `http://localhost:3000` — the UI has two tabs: **Events** (calls `/api/ca
 !!! tip "Full local stack"
     Run orders on `:8081`, gateway on `:8080` pointing `ORDERS_URL=http://localhost:8081`, then `npm run dev` for the frontend. The Vite proxy handles CORS automatically in dev — no browser changes needed.
 
+
+### 10.5 Nuances, Gotchas & Architect Considerations
+
+!!! tip "Nuances — subtle behaviours to internalise"
+    - **Multi-stage build cache invalidation**: Docker's layer cache is invalidated from the first changed layer downward. Copying `go.mod`/`go.sum` BEFORE `COPY . .` means `go mod download` is only re-run when dependencies change, not on every code change. This is the single biggest build-time optimization for Go services.
+    - **Distroless images contain no shell** — you cannot `kubectl exec -it -- /bin/sh` into them for debugging. Instead, use ephemeral debug containers: `kubectl debug -it pod/X --image=busybox --target=go-service`. Never re-add a shell to a distroless prod image just for convenience.
+    - **Non-root UID must be consistent across image layers**: if the `COPY --from=builder` copies files owned by `root` and then the `USER 1000` directive switches to non-root, the app may not be able to read its own files at runtime. Always `COPY --chown=1000:1000` in the final stage, or set ownership in the builder stage.
+
+!!! warning "Gotchas — traps that catch experienced engineers"
+    - **`latest` tag in production**: `image: myapp:latest` combined with `imagePullPolicy: Always` means every pod restart pulls a new image — including breaking changes deployed after the pod was last scheduled. Always use immutable digest tags (`sha256:...`) or semver tags in production manifests.
+    - **Secret injection via build ARGs**: `ARG DB_PASSWORD` makes the secret visible in `docker history` and Docker layer cache. Secrets must be injected at **runtime** via environment variables or mounted files, never baked into the image layer.
+    - **Multi-arch build assumption**: building on an ARM Mac and pushing to a registry used by x86 nodes will cause `exec format error` on pod startup. Always build for `linux/amd64` explicitly in CI, or use `docker buildx` multi-platform manifests.
+
+!!! question "Architect Considerations"
+    1. **Image registry strategy**: a private registry (registry.internal.tickethub.io) is required for images that contain proprietary business logic. Decide: run Ceph/Harbor on-cluster (adds operational burden) or use an external private registry (adds a network dependency and egress cost)?
+    2. **Base image governance**: who owns the base images (`golang:1.25-alpine`, `gcr.io/distroless/base`)? A team that pulls base images without verification is vulnerable to supply-chain attacks (Chapter 24). Define a process for: base image approval, vulnerability scanning, and scheduled rebuilds when base image CVEs are published.
+    3. **Build reproducibility**: a Dockerfile without pinned base image digests is not reproducible — two builds of the same commit can produce different images if the base image has been updated. Pin base images by digest in Dockerfiles for production services.
+    4. **Layer size vs layer count trade-off**: fewer, larger layers are generally faster to push/pull (fewer HTTP requests) but harder to cache incrementally. For a microservice with 50 MB of dependencies and 5 MB of code, separate layers make sense; for a 500 MB monolith, reconsider the decomposition.
+    5. **SBOM and CVE scanning integration**: generate a Software Bill of Materials (`syft`) and scan it with `grype` in the CI pipeline. Block merges when HIGH/CRITICAL CVEs are introduced. This is the first line of supply-chain defence (Chapter 24).
+
 !!! success "Chapter 10 checklist"
     - Every service uses a **multi-stage** Dockerfile; SDK excluded from runtime.
     - Runtime base is **distroless/alpine**, running as a **non-root `USER`**.

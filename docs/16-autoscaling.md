@@ -189,6 +189,26 @@ HPA/KEDA can only place pods if there's room. When pods go **Pending** for lack 
     back up in the background. Autoscaling on bare metal manages *cost over hours*, not
     *bursts over seconds*.
 
+
+### 16.5 Nuances, Gotchas & Architect Considerations
+
+!!! tip "Nuances — subtle behaviours to internalise"
+    - **HPA has a stabilization window**: by default, scale-down is suppressed for 300 seconds after the last scale event to prevent thrashing. During a load spike that lasts 4 minutes, the HPA may keep extra pods running for 5+ minutes after load drops. This is intentional — tune `stabilizationWindowSeconds` for your traffic pattern.
+    - **KEDA can scale to zero; HPA cannot**: HPA's minimum is 1 replica. KEDA's `ScaledObject` with `minReplicaCount: 0` genuinely scales the Deployment to zero pods when there's no work — saving resources for batch/event-driven services. The trade-off: a cold-start delay on the first message.
+    - **VPA mutates pods at admission time**: VPA applies recommendations by evicting pods and recreating them with new resource specs. This means a VPA with `updateMode: Auto` is continuously evicting pods based on usage — acceptable for batch, destructive for stateful services. Always use `updateMode: Off` (recommend only) for databases.
+
+!!! warning "Gotchas — traps that catch experienced engineers"
+    - **HPA + VPA on the same Deployment**: if HPA controls replicas and VPA controls resources, they fight. HPA may scale up to 10 replicas; VPA may then lower each pod's request, causing HPA to scale back down (thinking load is lower). Only use VPA on workloads NOT controlled by HPA, or use the `VerticalPodAutoscalerCheckpoints` approach.
+    - **Custom metric HPA with Prometheus adapter**: if the Prometheus query returns no data (empty series), the adapter returns `0`. HPA interprets this as "zero load" and scales to `minReplicas` — potentially dropping all pods during a monitoring outage. Configure `behavior.scaleDown.stabilizationWindowSeconds: 600` as a safety buffer.
+    - **Cluster Autoscaler vs pod eviction**: CA adds nodes based on `Pending` pods. If your node group has a maximum size and CA hits it, pods stay `Pending` indefinitely with no obvious error. Monitor `cluster_autoscaler_unschedulable_pods_count` and set an alert.
+
+!!! question "Architect Considerations"
+    1. **Scale floor vs cost floor**: KEDA's scale-to-zero is great for cost — but the first Kafka message after a cold start triggers a pod create (~30s), during which messages queue. Define the acceptable message-processing latency SLO and compare it against the cold-start time before enabling scale-to-zero for `notifications`.
+    2. **Horizontal vs vertical scaling decision**: stateless services (catalog, orders, gateway) scale horizontally (more pods). Stateful services (Postgres, Kafka) scale vertically (larger pods) or with sharding. Mixing strategies on the same workload requires careful VPA/HPA co-ordination.
+    3. **Node group diversity for Cluster Autoscaler**: CA only adds nodes it knows about. With a single node group (all general workers), CA cannot add data-pool or infra-pool nodes. If Prometheus or Kafka needs more capacity, CA cannot help — you must manually expand the data pool. Design node groups to match your scaling axes.
+    4. **KEDA ScaledJob vs ScaledObject**: for short-lived batch tasks, `ScaledJob` creates new Job instances per queue message rather than scaling a long-running Deployment. This gives perfect work isolation (one crash doesn't affect others) but higher pod overhead. Choose based on job duration and failure isolation requirements.
+    5. **Autoscaler interaction with PodDisruptionBudget**: a PDB with `minAvailable: 2` on a 3-replica Deployment blocks the CA from removing a node if it would violate the PDB. Always pair PDB min with a replica count that allows graceful scale-down.
+
 !!! success "Chapter 16 checklist"
     - **Metrics Server** installed and verified (`kubectl top` works).
     - Stateless services have **HPA** on CPU/custom metrics with sane min/max + scale-down window.

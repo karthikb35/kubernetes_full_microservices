@@ -115,6 +115,26 @@ value: 100
 description: "Reports/reindex; first to be preempted."
 ```
 
+
+### 17.5 Nuances, Gotchas & Architect Considerations
+
+!!! tip "Nuances — subtle behaviours to internalise"
+    - **Affinity and anti-affinity are evaluated at scheduling time, not continuously**: once a pod is placed, it is never evicted just because the affinity rule is violated (e.g., if the preferred node is retainted after scheduling). Descheduler (an optional add-on) can periodically re-balance, but vanilla Kubernetes does not.
+    - **`topologySpreadConstraints` uses `labelSelector` to count matching pods, not running pods**: a `Pending` pod counts toward the spread calculation. If two pods are simultaneously scheduled to the same zone, the spread constraint is temporarily violated — Kubernetes tolerates this momentary imbalance.
+    - **PriorityClass preemption evicts the lowest-priority pod** that, when removed, gives the high-priority pod enough resources. But the evicted pod's graceful termination period still applies — Kubernetes waits for it to terminate before scheduling the high-priority pod. During `terminationGracePeriodSeconds`, both the evicted and the new pod are competing for resources.
+
+!!! warning "Gotchas — traps that catch experienced engineers"
+    - **`requiredDuringSchedulingIgnoredDuringExecution` anti-affinity with replicas > zones**: if you require each pod to be on a different zone and you have 3 pods but only 2 zones, the third pod stays `Pending` forever. Use `preferredDuringSchedulingIgnoredDuringExecution` unless you can guarantee enough nodes in each zone.
+    - **Forgetting DaemonSet tolerations when adding taints**: adding `NoSchedule` taints to data/infra nodes without updating DaemonSet tolerations breaks monitoring (Falco, node-exporter) on those nodes — silently.
+    - **PodDisruptionBudget `unhealthyPodEvictionPolicy: AlwaysAllow`** (Kubernetes 1.27+) allows voluntary disruptions to proceed even if the pod is already unhealthy. Without this, a pod in CrashLoopBackOff blocks node drains indefinitely — a common cluster upgrade blocker.
+
+!!! question "Architect Considerations"
+    1. **Rack-awareness vs zone-awareness**: Kubernetes only knows zones, not racks. If your 3 racks are in the same zone (same data center), a zone failure still takes out all 3 racks. For true rack-level HA, add a custom `topology.tickethub.io/rack` label and use it in `topologySpreadConstraints`.
+    2. **Cluster-level PriorityClass policy**: who can create high-priority PriorityClasses? A team that creates `value: 1000000` can starve ALL other workloads by preemption. Restrict PriorityClass creation to cluster admins via RBAC (Chapter 19).
+    3. **Descheduler for re-balancing**: Kubernetes schedules but doesn't continuously re-balance. After node addition or failure recovery, pods are not automatically redistributed. The `descheduler` project adds this capability — evaluate it before assuming your topology spread constraints are being honoured over time.
+    4. **Topology spread with HPA**: when HPA scales a Deployment from 3 to 12 replicas under load, `topologySpreadConstraints` guides placement. But if one zone's nodes are full, the scheduler falls back to a zone with capacity — violating the spread. Ensure zone capacity is symmetric and sized for peak replica counts.
+    5. **Graceful termination vs PDB interaction**: a PDB prevents pod eviction if it would violate `minAvailable`. During a rolling update, a pod being terminated counts as "unavailable" until it fully stops. If `terminationGracePeriodSeconds` is long (60s+) and the PDB is tight (`minAvailable: 2` on 3 replicas), the rollout serializes to 1 pod at a time and takes minutes. Tune graceful termination and PDB together.
+
 !!! success "Chapter 17 checklist"
     - Data/infra pools **tainted**; only matching workloads **tolerate** them.
     - Replicas use **podAntiAffinity** + **topologySpreadConstraints** across nodes/zones.

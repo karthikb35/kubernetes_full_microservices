@@ -69,6 +69,7 @@ spec:
 ### 22.5 Generate — provision companion resources
 
 ```yaml
+# See: repo/manifests/ for the full manifest
 # every new namespace automatically gets a default-deny NetworkPolicy
 apiVersion: kyverno.io/v1
 kind: ClusterPolicy
@@ -101,6 +102,26 @@ spec:
     for Kubernetes teams. **OPA/Gatekeeper** uses the **Rego** language, more powerful for
     complex logic but a steeper learning curve. TicketHub standardizes on Kyverno for its
     YAML ergonomics.
+
+
+### 22.5 Nuances, Gotchas & Architect Considerations
+
+!!! tip "Nuances — subtle behaviours to internalise"
+    - **Kyverno mutation policies run BEFORE validation policies** in the admission chain. This means a mutate policy that injects a default `securityContext` runs first, then a validate policy can check that `securityContext` is present — allowing you to enforce invariants while also providing defaults for teams that haven't set them.
+    - **`background: true` (default)** means Kyverno evaluates policies against existing resources periodically, not just at admission time. A new validate policy with `validationFailureAction: enforce` will log violations on pre-existing resources but will NOT delete or modify them — only new or updated objects are blocked.
+    - **ClusterPolicy vs Policy scope**: `ClusterPolicy` is cluster-wide; `Policy` is namespace-scoped. Use `ClusterPolicy` for platform-wide invariants (no `latest` tag, no root containers) and namespace-scoped `Policy` for team-specific rules (allowed image registries for namespace X).
+
+!!! warning "Gotchas — traps that catch experienced engineers"
+    - **`validationFailureAction: enforce` on a policy that breaks a system component**: if you apply a `ClusterPolicy` that blocks pods without a required label and the Cilium DaemonSet pods don't have that label, Cilium pods cannot be recreated after a crash — taking down all node networking. Always test policies in `audit` mode first and explicitly exclude system namespaces with `exclude.resources.namespaces`.
+    - **Kyverno webhook timeout**: Kyverno injects an admission webhook with a default timeout of 10 seconds. If the Kyverno pod is unavailable or slow, ALL pod admissions time out — blocking ALL deployments cluster-wide. Set `failurePolicy: Ignore` on non-critical policies and ensure Kyverno runs with PDB `minAvailable: 1` or is in HA mode.
+    - **Generate policies and ownership**: when Kyverno generates a NetworkPolicy in a new namespace, it becomes the owner. Manually editing that NetworkPolicy will cause Kyverno to re-sync it back to the generated version. Either don't generate resources you intend to customize, or use `synchronize: false` to generate-once-and-abandon.
+
+!!! question "Architect Considerations"
+    1. **Policy as code in git**: Kyverno ClusterPolicies should live in the `repo/manifests/60-security/` directory and be deployed via Argo CD (Chapter 28). This makes policy changes auditable (git history), reviewable (PR process), and automatically enforced across environments.
+    2. **Kyverno vs OPA/Gatekeeper**: Kyverno uses native Kubernetes YAML for policies (lower learning curve); OPA Gatekeeper uses Rego (more expressive for complex rules). For a platform team that primarily maintains Kubernetes manifests, Kyverno's YAML-native approach reduces the cognitive overhead. For complex multi-system policy (spanning cloud APIs, CI/CD, and Kubernetes), OPA is more consistent.
+    3. **Exception management**: Kyverno supports `PolicyException` objects (v1.9+) that grant named workloads exemptions from specific policies. This is better than disabling the policy for everyone — use PolicyExceptions for the `cilium-system` pods that legitimately need `privileged: true`.
+    4. **Image signature verification at scale**: Kyverno's `verifyImages` policy (with cosign) verifies every image pull against a public key. The verification adds ~100ms to pod scheduling. For clusters with hundreds of pod starts per second, verify the signing verification overhead is acceptable — cache the results in the Kyverno OCI cache.
+    5. **Policy drift detection**: Kyverno's background scan generates `PolicyReport` and `ClusterPolicyReport` objects with violation counts. Expose these to Grafana via the policy-reporter sidecar. A dashboard showing violation counts per namespace and per policy gives the platform team real-time visibility into compliance posture.
 
 !!! success "Chapter 22 checklist"
     - Kyverno installed; core policies as code in Git (validate/mutate/generate).

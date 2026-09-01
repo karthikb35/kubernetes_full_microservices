@@ -114,6 +114,26 @@ EOF
 sysctl --system
 ```
 
+
+### 2.5 Nuances, Gotchas & Architect Considerations
+
+!!! tip "Nuances — subtle behaviours to internalise"
+    - KVM **CPU pinning** eliminates NUMA cross-traffic for memory-intensive VMs (Postgres data nodes) but reduces the hypervisor's scheduling freedom — pin only where latency matters, not cluster-wide.
+    - Proxmox default disk format is **qcow2** (copy-on-write, flexible but ~15% slower than raw). Switch VM disks to **raw** format on Ceph RBD-backed storage for production database VMs to eliminate the double CoW overhead.
+    - VM **balloon driver** (virtio-balloon) can dynamically return unused guest RAM to the hypervisor — useful for dev/staging but dangerous for Postgres nodes that use a large shared_buffers. Disable it for data-pool VMs.
+
+!!! warning "Gotchas — traps that catch experienced engineers"
+    - **Forgetting to disable swap in the VM** after provisioning: `swapoff -a` survives the session but `/etc/fstab` re-enables it on reboot, causing kubelet to refuse to start with `failed to run Kubelet: running with swap on is not supported`.
+    - **CPU passthrough breaks live migration**: `cpu: host` gives best performance but means you cannot live-migrate VMs to a host with a different CPU generation. Use the lowest common denominator microarch (e.g., `cpu: Cascadelake-Server`) for any VM you may need to migrate.
+    - **NTP drift between VMs**: the hypervisor clock is the authoritative source; each VM must sync from the KVM host, not from an external NTP server. etcd requires < 500ms clock skew between members — larger drift causes leader election instability.
+
+!!! question "Architect Considerations"
+    1. **VM density vs performance**: a rule of thumb is allocate no more than **1.5× physical cores** in total vCPUs across all VMs on a host (avoid CPU steal for latency-sensitive workloads). What is the actual peak CPU utilization per VM in your load model?
+    2. **Dedicated CP hosts vs shared**: separating control-plane VMs onto dedicated physical hosts prevents a noisy application workload from starving the etcd leader, but wastes hardware. Justified for clusters > 50 nodes or SLA-critical platforms.
+    3. **VM count vs bare-metal workers**: every VM layer adds latency (network virtio, disk virtio). For very I/O-intensive workloads (Kafka, Ceph OSD), evaluate whether the VMs are introducing unacceptable p99 latency — consider dedicated bare-metal workers in the data pool.
+    4. **Recovery time objective for a lost hypervisor**: if a KVM host fails, how long does it take to bring up replacement VMs (manual re-provision vs Terraform + cloud-init)? This directly sets your node-level RTO.
+    5. **Ceph OSD placement**: Ceph OSDs must run on nodes where the raw block devices reside. If Ceph runs on VMs, the VMs must have RBD-backed disks that are NOT themselves backed by the same Ceph cluster (avoid circular dependency).
+
 !!! success "Chapter 2 checklist"
     - Physical hosts chosen and sized (3 × 256 GB/64 vCPU).
     - Hypervisor (KVM/Proxmox) installed on each.

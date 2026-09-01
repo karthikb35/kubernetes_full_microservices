@@ -3,7 +3,7 @@
 A quick-reference for the vocabulary used throughout this book. Terms are alphabetical;
 the **Ch** column points to where the concept is developed in depth. For the foundational
 five (object model, kubectl, Helm, CIDR, the stateful backends) see the **[Chapter 0
-primer](#ch0)**.
+primer](00b-prerequisites.md)**.
 
 | Term | Definition | Ch |
 |------|------------|----|

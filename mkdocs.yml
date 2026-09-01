@@ -1,0 +1,136 @@
+site_name: "TicketHub — Kubernetes Cluster Architecture"
+site_description: "A Cluster Architect's Textbook — designing, installing and operating a production Kubernetes cluster around the TicketHub microservices platform"
+site_author: "TicketHub Engineering"
+docs_dir: docs
+site_dir: site
+repo_url: https://github.com/karthik-k8s/kubernetes_full_microservices
+repo_name: kubernetes_full_microservices
+edit_uri: edit/main/docs/
+
+theme:
+  name: material
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: indigo
+      accent: orange
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: indigo
+      accent: orange
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  font:
+    text: Inter
+    code: JetBrains Mono
+  logo: assets/diagrams/01-context.png
+  favicon: assets/diagrams/01-context.png
+  features:
+    - navigation.tabs
+    - navigation.tabs.sticky
+    - navigation.sections
+    - navigation.expand
+    - navigation.top
+    - navigation.footer
+    - search.highlight
+    - search.share
+    - search.suggest
+    - content.code.annotate
+    - content.code.copy
+    - content.tabs.link
+    - toc.integrate
+    - toc.follow
+
+extra_css:
+  - stylesheets/extra.css
+
+plugins:
+  - search:
+      lang: en
+  - minify:
+      minify_html: true
+
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.tabbed:
+      alternate_style: true
+  - tables
+  - attr_list
+  - md_in_html
+  - toc:
+      permalink: true
+      toc_depth: 3
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+
+nav:
+  - Home: 00-front-matter.md
+  - "Prerequisites": 00b-prerequisites.md
+
+  - "Part I — Architecture Design":
+    - "1. TicketHub Scenario": 01-scenario.md
+    - "2. Bare Metal to VMs": 02-baremetal-to-vm.md
+    - "3. Cluster Topology": 03-topology.md
+    - "4. Network Design": 04-network-design.md
+
+  - "Part II — Cluster Installation":
+    - "5. kubeadm Install (HA)": 05-kubeadm-install.md
+    - "6. Cilium CNI + Hubble": 06-cilium-cni.md
+    - "7. MetalLB + NGINX Ingress": 07-metallb-ingress.md
+    - "7A. Certificate & PKI": 07b-certificates.md
+    - "8. Rook-Ceph Storage": 08-storage-rook-ceph.md
+    - "9. Namespaces & Resources": 09-namespaces-resources.md
+
+  - "Part III — Services":
+    - "10. Containerizing Services": 10-containerizing.md
+    - "11. Workload Controllers": 11-workload-controllers.md
+    - "12. Services & Traffic": 12-services-traffic.md
+    - "13. Config & Secrets": 13-config-secrets.md
+    - "14. Stateful Storage + DB Replication": 14-stateful-storage.md
+
+  - "Part IV — Reliability & Scaling":
+    - "15. Resource Management": 15-resource-management.md
+    - "16. Autoscaling": 16-autoscaling.md
+    - "17. Scheduling & Placement": 17-scheduling-placement.md
+    - "18. Health & Lifecycle": 18-health-lifecycle.md
+
+  - "Part V — Security":
+    - "19. RBAC & Service Accounts": 19-rbac.md
+    - "20. Pod Security": 20-pod-security.md
+    - "21. Network Policies": 21-network-policies.md
+    - "22. Kyverno Policies": 22-kyverno.md
+    - "23. Falco Runtime Detection": 23-falco.md
+    - "24. Secrets & Supply Chain": 24-secrets-supply-chain.md
+    - "25. CRDs & Operators": 25-crds-operators.md
+
+  - "Part VI — Operations":
+    - "26. Observability": 26-observability.md
+    - "27. Backup, DR & Upgrades": 27-backup-dr-upgrades.md
+    - "28. GitOps with Argo CD": 28-gitops-argocd.md
+    - "29. End-to-End Recap": 29-recap.md
+
+  - "Appendix":
+    - "A. Glossary": 30-appendix-glossary.md
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/karthik-k8s/kubernetes_full_microservices
+  generator: false

@@ -143,6 +143,26 @@ kubectl -n kube-system exec etcd-cp-1 -- etcdctl endpoint health --cluster
     - Keep the kubeadm config and join process **scripted/GitOps'd** so any node is
       reproducible (immutable infra from Chapter 2).
 
+
+### 5.7 Nuances, Gotchas & Architect Considerations
+
+!!! tip "Nuances — subtle behaviours to internalise"
+    - `kubeadm init --upload-certs` stores the CA private key in a Secret in `kube-system` encrypted with a per-run key and **automatically expires after 2 hours**. If the second CP node join happens after 2 hours, the `--certificate-key` will no longer work — regenerate with `kubeadm init phase upload-certs --upload-certs`.
+    - **Static pods bypass the scheduler**: etcd, kube-apiserver, kube-controller-manager, and kube-scheduler run as static pods managed by kubelet directly from `/etc/kubernetes/manifests/`. They cannot be managed with `kubectl delete pod` — deleting the static pod manifest file is the only way to stop them.
+    - The `--skip-phases=addon/kube-proxy` flag during `init` leaves the cluster without ANY service routing until Cilium is installed. This means the init job completes successfully but `kubectl get nodes` may show `NotReady` even for the first CP node — that is expected.
+
+!!! warning "Gotchas — traps that catch experienced engineers"
+    - **Pinning kubeadm/kubelet versions**: `apt-mark hold` is essential. An unintended `apt upgrade` that bumps kubelet to a newer minor version than the kube-apiserver violates the version skew policy and can break the node.
+    - **Forgetting `--control-plane-endpoint` at init time**: you cannot add this flag post-installation. If you init with `--apiserver-advertise-address` (single IP) instead of a VIP, joining additional CP nodes later will require a kubeadm upgrade + cert regeneration — painful.
+    - **Certificate SANs**: `kubeadm init` auto-includes the CP node IP and hostname in the apiserver cert SANs, but NOT the VIP if you add the load balancer later. Always pass `--apiserver-cert-extra-sans=<VIP>` at init time, or regenerate the apiserver cert afterward with `kubeadm init phase certs apiserver`.
+
+!!! question "Architect Considerations"
+    1. **Bootstrap token security**: the join token printed by `kubeadm init` is valid for 24 hours and grants unauthenticated join capability. Rotate it (`kubeadm token create`) immediately after all nodes have joined, and restrict token creation permissions in RBAC.
+    2. **etcd topology — stacked vs external**: kubeadm defaults to stacked etcd (etcd co-located on CP nodes). External etcd (separate VMs) gives stronger isolation and allows etcd to be upgraded independently, but adds 3+ VMs to manage. For a 12-node cluster, stacked is adequate; for 50+ nodes, consider external.
+    3. **kubeadm config file vs flags**: all the `--flags` above should be committed to a `ClusterConfiguration` YAML (`repo/cluster/kubeadm-config.yaml`) and checked into git. Never run kubeadm with flags from memory — the config file IS your cluster's source of truth.
+    4. **Certificate rotation policy**: by default, kubelet rotates its client certificates automatically. The kube-apiserver serving cert must be manually renewed annually (`kubeadm certs renew`). Add a PrometheusRule alert for cert expiry < 30 days (Chapter 27 covers this).
+    5. **Disaster recovery with etcd snapshots**: the cluster is recoverable from etcd only if you have a recent snapshot AND the CA key. Test your etcd restore procedure against a clone cluster before the first production incident.
+
 !!! success "Chapter 5 checklist"
     - containerd + pinned kube tools on all nodes; swap off; sysctls set.
     - `kubeadm init` on cp-1 with the **VIP** endpoint and correct CIDRs.

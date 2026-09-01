@@ -94,6 +94,26 @@ kubeadm upgrade apply v1.31.0        # on cp-1, then cp-2, cp-3
 | **One at a time** | Preserve HA quorum (etcd, Chapter 3) throughout |
 | **Never skip minors** | 1.30 → 1.31 → 1.32, not 1.30 → 1.32 |
 
+
+### 27.5 Nuances, Gotchas & Architect Considerations
+
+!!! tip "Nuances — subtle behaviours to internalise"
+    - **Velero backs up Kubernetes resource definitions (etcd objects), NOT application data volumes** by default. The `--include-volumes` flag or CSI volume snapshot integration is required to back up PVC data. A Velero backup without volume snapshots can restore a StatefulSet definition but not the database data it contained.
+    - **etcd backup is a different layer from Velero backup**: etcd snapshot (`etcdctl snapshot save`) backs up the raw cluster state including Secrets, RBAC, and CRDs. Velero backup backs up namespaced resources but cannot restore cluster-scoped objects (Nodes, ClusterRoles, StorageClasses) without specific `--include-cluster-resources` flags. Both are required for full DR.
+    - **Kubernetes version skew policy**: you can upgrade only one minor version at a time (`1.29 → 1.30`, not `1.29 → 1.31`). Control plane components can be ahead of kubelets by up to 2 minor versions during rolling upgrades, but kubelets cannot be ahead of the API server. The upgrade order is always: etcd → kube-apiserver → other CP components → kubelets.
+
+!!! warning "Gotchas — traps that catch experienced engineers"
+    - **`velero backup create` vs `velero schedule create`**: one-time backups expire and are deleted based on the TTL. Without a schedule, a manual backup from 6 months ago is your most recent backup when you need it most. Always configure a scheduled backup from day 1.
+    - **PVC snapshot CSI driver compatibility**: Velero CSI volume snapshots require the storage driver to support the `VolumeSnapshot` API. Rook-Ceph's CSI driver supports it, but you must install the `snapshot.storage.k8s.io` CRD and the external-snapshotter controller separately. Not having these installed means Velero silently skips volume backups.
+    - **In-place node upgrade vs blue-green**: `kubeadm upgrade node` upgrades the kubelet in place. If the upgrade fails mid-way, the node may be in a partially upgraded state that prevents normal operation. Always have a node replacement strategy (provision new node, drain old, decommission) as a fallback — especially for production clusters where rebuild time is critical.
+
+!!! question "Architect Considerations"
+    1. **RTO and RPO definition**: define these BEFORE building the backup system. For TicketHub: is a 4-hour RTO acceptable (rebuild cluster + restore backup)? Is a 1-hour RPO acceptable (lose up to 1 hour of orders)? These requirements drive the backup frequency, snapshot consistency level, and restore automation investment.
+    2. **Backup verification — "trust but verify"**: a backup that has never been tested is a hypothesis, not a guarantee. Schedule quarterly DR drills: restore the entire `data` namespace to a separate cluster and run smoke tests. Track the actual restore time — it's almost always longer than estimated.
+    3. **Cluster upgrade strategy for bare metal**: you cannot "spin up a new node" on demand like in cloud. For bare metal, the upgrade strategy is: drain workers one by one, upgrade kubelet, uncordon. For control plane: use the HA topology (3 CP nodes) so you upgrade one at a time with 2/3 quorum intact.
+    4. **etcd compaction and defragmentation**: etcd accumulates historical revision data that is only freed by compaction (`etcdctl compact`) and defragmentation (`etcdctl defrag`). A production cluster that has been running for months without defragmentation can have etcd databases 10× larger than necessary, increasing backup size and restore time.
+    5. **Multi-cluster DR topology**: a single on-prem cluster with backup to the same data center Ceph storage is not a true DR — a data center fire destroys both the cluster and the backup. For genuine DR, Velero backups must be replicated to an off-site location (different data center, cloud storage bucket).
+
 !!! success "Chapter 27 checklist"
     - **etcd snapshots** + **Velero** backups scheduled; PV data snapshotted.
     - **RPO/RTO** defined and validated by periodic **restore drills**.

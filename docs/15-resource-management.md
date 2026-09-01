@@ -88,6 +88,26 @@ kubectl -n tickethub describe quota tickethub-quota    # see used vs hard
 kubectl -n tickethub top pods                          # live usage vs requests
 ```
 
+
+### 15.5 Nuances, Gotchas & Architect Considerations
+
+!!! tip "Nuances — subtle behaviours to internalise"
+    - **CPU requests are used for scheduling AND CPU share allocation (cgroups)**, not for hard limits. A pod requesting `500m` CPU on a node with spare cycles can burst to multiple cores — `request` only guarantees its proportional share under contention. Only `limit` hard-caps CPU via the CFS bandwidth controller.
+    - **Memory limit OOM is immediate and silent**: when a container exceeds its memory limit, the kernel sends `SIGKILL` with `OOMKilled` reason — no warning, no graceful shutdown. This is different from CPU throttling (which just slows the container). Size memory limits with headroom for GC pauses (JVM) or memory spikes.
+    - **`BestEffort` pods are evicted first under node pressure**, but eviction order within a QoS class depends on how much over their request a pod is running. A `Burstable` pod using 10× its request is evicted before a `Burstable` pod using 1.1× — even if the second pod has a smaller absolute memory footprint.
+
+!!! warning "Gotchas — traps that catch experienced engineers"
+    - **Setting CPU limit = CPU request**: this gives the container a `Guaranteed` QoS class (good for priority), but it pins the CPU at exactly the request — the container cannot burst even when the node has idle capacity. For most application pods, set no CPU limit and let them burst freely; set only a request to guide scheduling.
+    - **ResourceQuota counts requests, not actual usage**: a namespace with `cpu: 10` quota and 10 pods each requesting `1` CPU has hit the quota even if all pods are idle. Submitting a new pod fails with `exceeded quota` regardless of actual node capacity.
+    - **Missing LimitRange defaults**: a namespace without a LimitRange allows pods with no `resources` spec — these get `BestEffort` QoS and are the first to be evicted under node pressure. Always define LimitRange defaults to ensure a minimum resource contract.
+
+!!! question "Architect Considerations"
+    1. **Request sizing methodology**: requests should reflect the pod's p99 actual usage, not a theoretical maximum. Oversized requests cause poor bin-packing (nodes appear full while CPUs are idle). Use `kubectl top pod` / Prometheus `container_cpu_usage_seconds_total` histograms to right-size requests.
+    2. **CPU limit policy**: Google SRE and the Kubernetes community debate whether to set CPU limits. The consensus for latency-sensitive services: **no CPU limit** (allow bursting), set request accurately. For batch jobs: set limit = request (predictable scheduling). For third-party components: follow the vendor recommendation.
+    3. **Memory limit headroom factor**: set memory limit = 1.3–1.5× the p99 actual usage. This covers GC pauses (JVM), memory allocator overhead, and temporary buffers. Below 1.2× causes spurious OOMKills under load; above 2× wastes memory quota.
+    4. **Quota namespacing granularity**: should each microservice team have its own namespace with isolated quota, or should the `tickethub` namespace have a single aggregate quota? Per-team namespaces give charge-back visibility but multiply the management overhead.
+    5. **LimitRange max for VPA interaction**: VPA recommends new request/limit values. If the LimitRange `max.memory` is lower than VPA's recommendation, VPA silently skips the pod. Keep LimitRange maximums generous — they are a guardrail, not a target.
+
 !!! success "Chapter 15 checklist"
     - Every container has **memory requests** (and usually CPU requests) set deliberately.
     - Critical services set `requests == limits` → **Guaranteed** QoS.

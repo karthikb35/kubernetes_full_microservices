@@ -229,6 +229,26 @@ The newer **Gateway API** is the successor to Ingress — more expressive, role-
 
     Each layer has one job; together they replace what a cloud LB + ALB gives you.
 
+
+### 7.5 Nuances, Gotchas & Architect Considerations
+
+!!! tip "Nuances — subtle behaviours to internalise"
+    - MetalLB in L2 mode announces the LoadBalancer IP from a **single node** at a time using ARP/NDP. Traffic arrives at that node, which then routes internally. This means a single node carries all ingress traffic — the load balancing happens AFTER the packet enters the cluster, not at the IP level. The announcing node becomes a bottleneck for very high-throughput services.
+    - The NGINX Ingress Controller creates a **single TCP socket** per worker process that handles all virtual hosts. TLS termination happens on the Ingress node — backend pods receive plain HTTP (or mTLS if you configure it separately). Ensure the Ingress pod resource limits are sufficient for your peak TLS handshake rate.
+    - `cert-manager` uses **ACME DNS-01 or HTTP-01 challenges** for Let's Encrypt. On a private on-prem cluster without internet access, HTTP-01 is impossible. Use DNS-01 with your DNS provider's API, or use an internal CA (Chapter 7A) for all cluster-internal certificates.
+
+!!! warning "Gotchas — traps that catch experienced engineers"
+    - **MetalLB pool overlapping with DHCP range**: if your data center DHCP server allocates IPs in the `10.10.0.200-250` range, ARP conflicts will cause intermittent LoadBalancer IP unreachability. Co-ordinate with the network team and document the reserved range.
+    - **Ingress `ingressClassName` mismatch**: NGINX Ingress only processes Ingress objects with `ingressClassName: nginx`. Forgetting this annotation (or using a different value) leaves the Ingress silently ignored — no routing, no error.
+    - **cert-manager CRD version drift**: `Certificate`, `Issuer`, and `ClusterIssuer` CRDs are versioned. Upgrading cert-manager without reading the migration guide can cause CRD schema validation failures that block certificate renewals silently.
+
+!!! question "Architect Considerations"
+    1. **Single vs multi-Ingress controller**: running a single NGINX Ingress for all traffic makes it a shared-fate component. A misconfigured Ingress resource for one service can crash the Nginx config reload and affect all services. Consider per-team or per-tier Ingress controllers with separate `ingressClassName` values.
+    2. **MetalLB BGP upgrade path**: L2 mode is simpler but has single-node bottleneck. If ingress throughput requirements grow (>10 Gbps), plan the migration to BGP mode with ECMP — this requires network team involvement and a BGP router change.
+    3. **WAF placement**: NGINX Ingress supports ModSecurity WAF module. For a payments platform, should WAF rules be applied at the Ingress layer (easier), at the API Gateway (more context-aware), or both? Layer 7 WAF adds latency — measure before committing.
+    4. **Ingress vs Gateway API**: Kubernetes Gateway API (GAMMA) is the eventual successor to Ingress, with richer routing (header-based, traffic splitting). Cilium and NGINX both support it. If you are building a new cluster, evaluate starting with Gateway API to avoid a future migration.
+    5. **Certificate wildcard vs per-service**: a `*.tickethub.io` wildcard cert simplifies management but must be rotated for every domain — including unrelated ones. Per-service certs (automated by cert-manager) are noisier but limit blast radius if a cert is compromised.
+
 !!! success "Chapter 7 checklist"
     - **MetalLB** installed with an **IPAddressPool** from the VLAN-20 range.
     - **NGINX Ingress** installed, pinned to the **infra** pool, given a MetalLB IP.

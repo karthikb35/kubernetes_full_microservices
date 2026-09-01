@@ -6,6 +6,12 @@ __pycache__/
 # Generated build output
 *.pdf
 
+# MkDocs build output
+site/
+
+# Assets copied into docs/ during site build (source of truth is /assets)
+docs/assets/
+
 # OS junk
 .DS_Store
 Thumbs.db

@@ -93,6 +93,26 @@ volumes:
     devices and is one step from owning the node. Reserve it for node-level agents (Falco,
     CNI) in dedicated namespaces, and gate even those with Kyverno (Chapter 22).
 
+
+### 20.5 Nuances, Gotchas & Architect Considerations
+
+!!! tip "Nuances — subtle behaviours to internalise"
+    - **Pod Security Admission (PSA) `warn` mode writes warnings to the API server response, not to the pod's logs or events** — operators using CI pipelines must parse `kubectl apply` stderr for `Warning: would violate PodSecurity` messages. Many CI systems suppress stderr by default, making PSA warn mode silently useless.
+    - **`securityContext.readOnlyRootFilesystem: true`** prevents writes to the container's root filesystem, but tmpfs mounts (via `emptyDir: { medium: Memory }`) and volumeMounts are writable. An application that writes logs to `/tmp` must mount an `emptyDir` at `/tmp` explicitly or the container will crash.
+    - **`capabilities.drop: [ALL]` without adding back `NET_BIND_SERVICE`**: if your container binds to port 80 or 443, dropping ALL capabilities prevents binding to privileged ports (< 1024). Either run on a non-privileged port (8080) — the correct approach — or add back `NET_BIND_SERVICE` only.
+
+!!! warning "Gotchas — traps that catch experienced engineers"
+    - **`privileged: true` bypasses ALL namespace isolation**: a privileged container can mount the host filesystem, load kernel modules, and escape the namespace entirely. It is equivalent to root on the host. Never use `privileged: true` in application pods; even Falco's DaemonSet uses a minimal set of capabilities instead.
+    - **`runAsNonRoot: true` without a specific UID fails unexpectedly**: if the container image's `USER` directive sets UID 0 (root), the pod will fail with `container has runAsNonRoot and image has non-numeric user root`. Always pair `runAsNonRoot: true` with `runAsUser: <non-zero UID>` for deterministic behavior.
+    - **PSA `enforce` on `kube-system` breaks cluster components**: `kube-system` pods (kube-proxy, Cilium) require privileged capabilities. Applying `restricted` policy to `kube-system` will block the CNI agent pods and crash the cluster. Never apply PSA enforcement to `kube-system`, `kube-public`, or any platform namespace without testing first.
+
+!!! question "Architect Considerations"
+    1. **PSA vs Kyverno for pod security**: PSA enforces three fixed policy levels (privileged, baseline, restricted) — no customization. Kyverno (Chapter 22) can express the same policies with custom carve-outs. For an enterprise platform, Kyverno gives the flexibility to say "allow this one specific privileged workload with an explicit exception" while PSA's `warn` mode acts as a safety net.
+    2. **Seccomp profile selection**: the default Docker seccomp profile blocks ~300 dangerous syscalls. The Kubernetes `RuntimeDefault` seccomp profile is equivalent. For payments/security-critical pods, a custom seccomp profile that allows ONLY the syscalls the binary actually uses (generated with `strace` or `seccompgen`) provides tighter isolation.
+    3. **Image UID/GID governance**: standardize on a non-root UID range for all team images (e.g., `1000-1999`). Add a Kyverno policy that rejects images claiming UID 0 at admission time. This prevents the "just run as root for local dev" habit from reaching production.
+    4. **Privileged DaemonSets namespace segregation**: Falco, Cilium, and node-exporter require elevated privileges. Run them in a dedicated `security` or `monitoring` namespace with explicit PSA `privileged` label. Never co-locate privileged DaemonSets with application workloads in the same namespace.
+    5. **Security context inheritance testing**: define a security context regression test suite that runs against every new container image: verify `runAsNonRoot`, `readOnlyRootFilesystem`, no `CAP_SYS_ADMIN`. Add this to your CI pipeline as a policy gate before images reach the registry.
+
 !!! success "Chapter 20 checklist"
     - App namespaces enforce **PSA restricted**; `security` ns privileged, `data` ns baseline.
     - Rolled out via **warn/audit → enforce**, not blind.

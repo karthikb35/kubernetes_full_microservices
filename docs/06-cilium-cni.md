@@ -103,6 +103,26 @@ cilium endpoint list               # every pod endpoint + policy state
     performance, observability); Flannel would be simpler but has **no NetworkPolicy**,
     which is a non-starter for a payment platform.
 
+
+### 6.6 Nuances, Gotchas & Architect Considerations
+
+!!! tip "Nuances — subtle behaviours to internalise"
+    - Cilium's **BPF maps** are kernel data structures with a fixed maximum size. The default `bpf-map-dynamic-size-ratio` of 0.25 sizes maps based on total system RAM. On a node with very low RAM (< 4GB), the map sizes may be too small for clusters with many services, causing `map full` errors. Tune `--bpf-policy-map-max` and `--bpf-lb-map-max` proactively.
+    - **L7 policy (HTTP/gRPC path-aware)** requires Cilium to proxy the connection through an Envoy sidecar on the node — this adds ~0.5ms latency per hop. Use L7 policy only where HTTP-path granularity is genuinely needed; use L3/L4 for everything else.
+    - `kubeProxyReplacement=true` takes full ownership of `ClusterIP` routing. If you later add a component that tries to install its own iptables rules for service routing (e.g., an older Istio version), you will get a conflict. Verify all installed components are compatible with kube-proxy-free mode.
+
+!!! warning "Gotchas — traps that catch experienced engineers"
+    - **CNI is hard to replace post-install**: migrating from Cilium to another CNI (or vice versa) requires draining all nodes, removing the CNI, reinstalling, and reprogram all NetworkPolicy — effectively a cluster rebuild. Choose deliberately and commit.
+    - **Hubble relay not enabled by default**: `hubble observe` requires `hubble.relay.enabled=true` at install time. If you forget it, you need to `helm upgrade` Cilium later. Not a disaster, but it means you're flying blind on network flows during the most vulnerable early phase.
+    - **`cilium connectivity test` requires unrestricted egress**: the test creates pods in `cilium-test` namespace that make external HTTP requests. If a default-deny NetworkPolicy is in place before the test, it will fail with misleading errors. Run the connectivity test before applying NetworkPolicy.
+
+!!! question "Architect Considerations"
+    1. **Hubble data retention**: Hubble stores flow records in a ring buffer in kernel memory — it has no persistent store. For compliance or forensics, you need to configure a Hubble export to an external log store (Loki, Elasticsearch) via the Hubble Kafka/S3 exporter.
+    2. **eBPF kernel version requirements**: Cilium 1.16 requires kernel ≥ 5.10 for all features. Verify your VM kernel version before cluster bootstrap — older RHEL/Ubuntu LTS kernels may not support all Cilium features (notably WireGuard encryption requires ≥ 5.6, BPF-based masquerading requires ≥ 5.10).
+    3. **DSR (Direct Server Return) compatibility**: DSR load balancing (`loadBalancer.mode=dsr`) bypasses kube-proxy completely and returns traffic directly from the backend pod to the client. It requires the backends to see the original client IP — check that your HAProxy VIP configuration is compatible before enabling this.
+    4. **Network policy migration strategy**: migrating from broad `allow all` to zero-trust NetworkPolicy (Chapter 21) is the highest-risk operational change on a live cluster. Use Hubble in audit mode first, generate policy from observed flows, then enforce incrementally per namespace.
+    5. **Cluster Mesh for multi-cluster**: if TicketHub grows to span multiple data centers, Cilium Cluster Mesh provides a single policy domain across clusters. This is a significant architectural commitment — design the initial address space and naming conventions with multi-cluster in mind from day one.
+
 !!! success "Chapter 6 checklist"
     - CNI installed → all nodes **Ready**, `cilium connectivity test` passes.
     - **kube-proxy replaced** by Cilium eBPF.

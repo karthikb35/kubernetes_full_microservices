@@ -168,6 +168,26 @@ hubble observe --namespace tickethub --verdict DROPPED   # see what policy block
     them up (Chapter 27). Metrics/logs on ephemeral `emptyDir` vanish exactly when a node
     dies — the moment you most need to look back. Keep them off the nodes they observe.
 
+
+### 26.5 Nuances, Gotchas & Architect Considerations
+
+!!! tip "Nuances — subtle behaviours to internalise"
+    - **Prometheus `rate()` vs `irate()`**: `rate()` uses the full scrape interval window and is more resistant to single-sample spikes; `irate()` uses only the last two samples and reacts faster. For alerting rules (where you want to react to sustained increases), use `rate()`. For dashboards showing instantaneous throughput, `irate()` gives more responsive graphs.
+    - **Loki indexes only labels, not log content**: a query `{app="orders"} |= "ERROR"` first selects log streams by label (fast — B-tree lookup) and then scans the selected stream content for "ERROR" (slow — sequential scan). Design Loki label schemes with cardinality in mind: labels with 1000+ values (e.g., `pod_ip` or `request_id`) create exploding cardinality that breaks Loki's compaction and query performance.
+    - **Tempo trace sampling**: sending 100% of traces to Tempo at high throughput is expensive. A head-based sampling rate of 1-5% is typical for high-volume services. But you may miss rare error traces. Tail-based sampling (make the sampling decision AFTER seeing the full trace, keeping all error traces) provides better coverage — configure the OTel Collector to use tail-based sampling for error traces.
+
+!!! warning "Gotchas — traps that catch experienced engineers"
+    - **`up` metric as the only Prometheus health check**: `up == 0` means Prometheus failed to scrape the target, but `up == 1` does NOT mean the service is healthy — it means Prometheus successfully scraped `/metrics`. A service that is returning 500s but still serves metrics will have `up == 1`. Always alert on your business metrics (`http_requests_total{status="5xx"}`), not just `up`.
+    - **Grafana datasource secret rotation**: Grafana stores datasource credentials (Prometheus, Loki URLs with auth) in its database. Rotating Prometheus bearer tokens requires updating Grafana's datasource config AND reloading it — a step often missed when rotating credentials.
+    - **OTel Collector memory limiter placement**: the `memory_limiter` processor must be the FIRST processor in the pipeline, before batching. If placed after the batcher, the batcher accumulates spans until the memory limit is already exceeded — causing uncontrolled OOM instead of graceful backpressure.
+
+!!! question "Architect Considerations"
+    1. **Metrics cardinality governance**: Prometheus performance degrades when the total number of unique time series (metric name × label combinations) exceeds ~1M per Prometheus instance. High-cardinality labels like `user_id`, `request_id`, or `url_path` in application metrics can explode series counts. Define a cardinality budget per service and enforce it via Prometheus recording rules that aggregate away high-cardinality dimensions.
+    2. **Log retention vs cost trade-off**: Loki stores logs in object storage (Ceph S3) which is cheap but query-slow for large windows. Define log retention tiers: 7 days hot (fast query), 30 days warm (slower), 90 days cold (compliance archive). Loki supports compaction and deletion policies per tenant/stream.
+    3. **Distributed tracing sampling strategy**: for an online ticketing platform, EVERY failed transaction should be traced end-to-end (tail sampling). Successful transactions can be sampled at 1%. This requires a tail-based sampler in the OTel Collector that buffers spans and makes the sampling decision when the root span completes.
+    4. **On-call alert quality**: every alert that pages someone at 3 AM must have a corresponding runbook. An alert without a runbook is a noise source, not a signal. Require runbooks as a PR requirement for any new `PrometheusRule`. Track mean time to acknowledge (MTTA) and mean time to resolve (MTTR) per alert as quality metrics.
+    5. **SLO burn rate alerts**: instead of alerting on raw error rates (`error_rate > 1%`), alert on SLO burn rate (`error_budget_consumed_rate > 5× normal` for 1-hour window). This gives high-signal, low-noise paging — you only get paged when you are burning through your error budget faster than acceptable, not on every transient spike.
+
 !!! success "Chapter 26 checklist"
     - **kube-prometheus-stack** running; services expose `/metrics` via **ServiceMonitors**.
     - Alerts defined on **SLO symptoms** (RED/USE), routed by Alertmanager to Slack/PagerDuty.

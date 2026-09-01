@@ -34,6 +34,7 @@ data:
 A **Secret** looks like a ConfigMap but is meant for sensitive values (DB passwords, API keys). Values are base64-encoded (**not** encryption on its own) and can be **encrypted at rest** in etcd (Chapter 24).
 
 ```yaml
+# See: repo/manifests/ for the full manifest
 # Illustrative only — NOT committed to Git. Real values are synced by the
 # External Secrets Operator (see external-secrets.yaml below).
 apiVersion: v1
@@ -118,6 +119,26 @@ spec:
     If you have no external vault, **Sealed Secrets** lets you commit an *encrypted*
     SealedSecret to Git that only the in-cluster controller can decrypt. Good for smaller
     setups; ESO scales better when a real secrets manager already exists.
+
+
+### 13.5 Nuances, Gotchas & Architect Considerations
+
+!!! tip "Nuances — subtle behaviours to internalise"
+    - **Mounted ConfigMap volumes update automatically** (eventually consistent, with a kubelet sync delay of `syncPeriod`, default 60s) — but **environment variables from ConfigMaps do NOT update** without a pod restart. This asymmetry catches teams off-guard: changing a feature flag in a ConfigMap takes up to 60s to propagate to volume-mounted configs but requires a rollout for env-var configs.
+    - **Kubernetes Secrets are base64-encoded, not encrypted**, by default in etcd. The base64 encoding is not a security measure — anyone with etcd access sees plaintext values. Encryption at rest (`EncryptionConfiguration` with AES-GCM or Vault KMS provider) is a separate cluster-level config (Chapter 24).
+    - **ExternalSecret reconciliation interval**: the `ExternalSecret` CR has a `refreshInterval` (default 1 hour). If Vault revokes and reissues a secret (e.g., after a rotation event), the new value won't reach the Kubernetes Secret for up to 1 hour unless you `kubectl annotate externalsecret X force-sync=$(date +%s)` to trigger immediate reconciliation.
+
+!!! warning "Gotchas — traps that catch experienced engineers"
+    - **`envFrom: configMapRef` loads ALL keys as env vars**: if a ConfigMap has a key named `JAVA_TOOL_OPTIONS` it will override the JVM settings for every container that mounts it — silently. Prefer `env: valueFrom: configMapKeyRef` for explicit key selection in production.
+    - **Secret data keys with unsupported characters**: Kubernetes Secret keys must match `[-._a-zA-Z0-9]`. A key named `db.password` (with a dot) is valid, but many application frameworks that read env vars convert dots to underscores or vice versa. Use consistent naming conventions.
+    - **ExternalSecret fails silently if the Vault path doesn't exist**: the ExternalSecret controller sets a `Ready=False` condition on the CR, but the application pod starts anyway with the PREVIOUS secret value if the Kubernetes Secret already exists from a prior sync. Monitoring ExternalSecret conditions is non-optional.
+
+!!! question "Architect Considerations"
+    1. **ConfigMap vs environment variable vs Vault secret decision tree**: use ConfigMaps for non-sensitive tunable configuration (log levels, feature flags, URLs). Use Secrets (backed by Vault via ExternalSecret) for credentials, tokens, and API keys. Never use ConfigMaps for secrets, even temporarily.
+    2. **Secret rotation zero-downtime strategy**: when a database password is rotated in Vault, ExternalSecret updates the Kubernetes Secret, but running pods don't see the update until they restart. Design connection pool reconnect logic (Postgres `target_session_attrs`, JDBC retry) to handle mid-session password changes, or coordinate pod rolling restarts with the rotation event.
+    3. **Vault namespace isolation**: does each team's ExternalSecret pull from a separate Vault namespace/path with its own policy? Sharing a single Vault policy that allows reading ALL secrets gives each service blast radius equal to the entire secret store — violates least privilege.
+    4. **Configuration drift detection**: with ConfigMaps managed by GitOps (Argo CD), a manual `kubectl edit configmap` creates drift that Argo CD will revert. Ensure your runbooks instruct operators to make configuration changes through git, not kubectl, to avoid surprise rollbacks.
+    5. **Sealed Secrets vs External Secrets**: Sealed Secrets encrypt secret values in git (useful for small teams without a Vault instance). External Secrets pull from an external store at runtime (better for enterprise governance). Choose based on your secret management maturity — Vault + External Secrets is the correct long-term architecture.
 
 !!! success "Chapter 13 checklist"
     - **One image per service** across all environments; config injected, never baked in.

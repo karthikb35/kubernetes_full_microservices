@@ -1,0 +1,490 @@
+# CRDs for PostgreSQL Streaming Replication — TicketHub (Ch 14, 25).
+# Defines two domain types:
+#   PostgresReplicationCluster  — declares a primary + N standbys with HA policy
+#   ReplicationSlot             — declares a named physical or logical replication slot
+# The tickethub-db-operator watches both and reconciles the StatefulSet, Services,
+# PgBouncer pool, WAL archiving, and failover topology.
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: postgresreplicationclusters.db.tickethub.io
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.14.0
+spec:
+  group: db.tickethub.io
+  names:
+    kind: PostgresReplicationCluster
+    plural: postgresreplicationclusters
+    singular: postgresreplicationcluster
+    shortNames: [pgrc]
+    categories: [tickethub-data]
+  scope: Namespaced
+  versions:
+    - name: v1alpha1
+      served: true
+      storage: true
+      additionalPrinterColumns:
+        - name: Primary
+          type: string
+          jsonPath: .status.currentPrimary
+        - name: Instances
+          type: integer
+          jsonPath: .spec.instances
+        - name: Ready
+          type: integer
+          jsonPath: .status.readyInstances
+        - name: Phase
+          type: string
+          jsonPath: .status.phase
+        - name: Age
+          type: date
+          jsonPath: .metadata.creationTimestamp
+      subresources:
+        status: {}
+      schema:
+        openAPIV3Schema:
+          type: object
+          required: [spec]
+          properties:
+            spec:
+              type: object
+              required: [instances, storage, bootstrap]
+              properties:
+                instances:
+                  type: integer
+                  minimum: 1
+                  maximum: 9
+                  description: >
+                    Total instance count: 1 primary + (instances-1) hot-standby
+                    replicas. Minimum 3 for production HA.
+                postgresVersion:
+                  type: integer
+                  enum: [14, 15, 16, 17]
+                  default: 16
+                  description: Major Postgres version; controls the container image tag.
+
+                # ---- Replication settings ----
+                replication:
+                  type: object
+                  description: Streaming-replication tuning for primary and standbys.
+                  properties:
+                    synchronousMode:
+                      type: string
+                      enum: [none, quorum, first]
+                      default: none
+                      description: >
+                        none  = fully asynchronous (best throughput, some lag risk).
+                        first = wait for at least one standby to flush WAL before ack.
+                        quorum= wait for quorum_commit_delay standbys (highest durability).
+                    synchronousStandbys:
+                      type: integer
+                      minimum: 1
+                      default: 1
+                      description: Number of standbys needed to satisfy quorum or first mode.
+                    walLevel:
+                      type: string
+                      enum: [replica, logical]
+                      default: replica
+                      description: >
+                        replica is sufficient for streaming HA.
+                        logical enables logical replication (CDC) downstream; use with
+                        a ReplicationSlot of type=logical.
+                    maxWalSenders:
+                      type: integer
+                      default: 10
+                      description: Max concurrent WAL sender processes on the primary.
+                    walKeepSize:
+                      type: string
+                      default: 1Gi
+                      description: Minimum WAL retained on the primary for lagging standbys.
+                    hotStandby:
+                      type: boolean
+                      default: true
+                      description: >
+                        Allow read-only queries on standbys.
+                        The operator creates a separate read-only Service endpoint when true.
+
+                # ---- WAL archiving (enables PITR) ----
+                walArchive:
+                  type: object
+                  description: Continuous WAL archiving to object storage for PITR.
+                  properties:
+                    enabled:
+                      type: boolean
+                      default: false
+                    destination:
+                      type: string
+                      description: >
+                        Object storage URL for WAL segments,
+                        e.g. s3://tickethub-wal/postgres (Ceph RGW compatible).
+                    credentialsSecret:
+                      type: string
+                      description: Secret name containing AWS_ACCESS_KEY_ID + AWS_SECRET_ACCESS_KEY.
+                    retentionDays:
+                      type: integer
+                      default: 7
+                      description: Days of WAL archives to keep before deletion.
+
+                # ---- Failover policy ----
+                failover:
+                  type: object
+                  description: Automatic failover and primary-update behaviour.
+                  properties:
+                    automaticFailover:
+                      type: boolean
+                      default: true
+                      description: >
+                        When true the operator promotes the most-ahead standby if the
+                        primary is unresponsive for promotionTimeout seconds.
+                    promotionTimeout:
+                      type: integer
+                      default: 60
+                      description: Seconds of primary unresponsiveness before failover begins.
+                    primaryUpdateStrategy:
+                      type: string
+                      enum: [RollingUpdate, Supervised]
+                      default: RollingUpdate
+                      description: >
+                        RollingUpdate: operator triggers a controlled switchover and
+                        updates the old primary in-place.
+                        Supervised: operator waits for a human kubectl annotate before
+                        switching — use for major-version upgrades.
+
+                # ---- PgBouncer connection pooler ----
+                connectionPooler:
+                  type: object
+                  description: >
+                    Optional PgBouncer sidecar Deployment for connection multiplexing.
+                    Creates rw-pool (→ primary) and ro-pool (→ standbys) Services.
+                  properties:
+                    enabled:
+                      type: boolean
+                      default: false
+                    replicas:
+                      type: integer
+                      default: 2
+                      description: Number of PgBouncer pods (stateless, safe to scale).
+                    poolMode:
+                      type: string
+                      enum: [session, transaction, statement]
+                      default: transaction
+                      description: >
+                        transaction mode is recommended for most web workloads —
+                        connections are returned to the pool after each transaction.
+                    maxClientConn:
+                      type: integer
+                      default: 200
+                      description: Maximum client connections PgBouncer will accept.
+                    defaultPoolSize:
+                      type: integer
+                      default: 25
+                      description: Server connections per (database, user) pair.
+
+                # ---- Storage ----
+                storage:
+                  type: object
+                  required: [size, storageClass]
+                  description: PVC template applied to every Postgres instance.
+                  properties:
+                    size:
+                      type: string
+                      description: Size of the data volume, e.g. 20Gi.
+                    storageClass:
+                      type: string
+                      description: StorageClass name; must have reclaimPolicy=Retain.
+                    walStorage:
+                      type: object
+                      description: >
+                        Optional separate PVC for pg_wal; isolating WAL on a different
+                        volume prevents a runaway WAL log from filling the data disk.
+                      properties:
+                        size:
+                          type: string
+                        storageClass:
+                          type: string
+
+                # ---- Observability ----
+                monitoring:
+                  type: object
+                  properties:
+                    enablePodMonitor:
+                      type: boolean
+                      default: true
+                      description: >
+                        Create a PodMonitor so Prometheus scrapes postgres_exporter
+                        sidecar metrics from every instance.
+
+                # ---- Bootstrap ----
+                bootstrap:
+                  type: object
+                  description: How to initialise the cluster on first creation.
+                  required: [secretName]
+                  properties:
+                    method:
+                      type: string
+                      enum: [initdb, pg_basebackup, recovery]
+                      default: initdb
+                      description: >
+                        initdb       — fresh cluster.
+                        pg_basebackup— clone from an existing running Postgres.
+                        recovery     — restore from WAL archive + base backup (PITR).
+                    secretName:
+                      type: string
+                      description: >
+                        Secret containing POSTGRES_PASSWORD (and RECOVERY_TARGET_TIME
+                        for method=recovery).
+
+                # ---- Resources per instance ----
+                resources:
+                  type: object
+                  properties:
+                    requests:
+                      type: object
+                      properties:
+                        cpu: { type: string }
+                        memory: { type: string }
+                    limits:
+                      type: object
+                      properties:
+                        cpu: { type: string }
+                        memory: { type: string }
+
+            # ---- Status (written by the operator) ----
+            status:
+              type: object
+              properties:
+                phase:
+                  type: string
+                  description: "Initialising | Healthy | Failing | Switchover | Recovering"
+                currentPrimary:
+                  type: string
+                  description: Pod name of the active primary (e.g. tickethub-postgres-0).
+                readyInstances:
+                  type: integer
+                  description: Number of pods in Ready state.
+                replicationLag:
+                  type: object
+                  description: Per-standby WAL lag as reported by pg_stat_replication.
+                  additionalProperties:
+                    type: string
+                replicationSlots:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      name: { type: string }
+                      active: { type: boolean }
+                      walLag: { type: string }
+                conditions:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      type: { type: string }
+                      status: { type: string }
+                      reason: { type: string }
+                      message: { type: string }
+                      lastTransitionTime: { type: string }
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: replicationslots.db.tickethub.io
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.14.0
+spec:
+  group: db.tickethub.io
+  names:
+    kind: ReplicationSlot
+    plural: replicationslots
+    singular: replicationslot
+    shortNames: [rslot]
+    categories: [tickethub-data]
+  scope: Namespaced
+  versions:
+    - name: v1alpha1
+      served: true
+      storage: true
+      additionalPrinterColumns:
+        - name: Cluster
+          type: string
+          jsonPath: .spec.clusterRef
+        - name: Type
+          type: string
+          jsonPath: .spec.type
+        - name: Active
+          type: boolean
+          jsonPath: .status.active
+        - name: WalLag
+          type: string
+          jsonPath: .status.walLag
+      subresources:
+        status: {}
+      schema:
+        openAPIV3Schema:
+          type: object
+          required: [spec]
+          properties:
+            spec:
+              type: object
+              required: [clusterRef, type]
+              properties:
+                clusterRef:
+                  type: string
+                  description: Name of the PostgresReplicationCluster this slot is created on.
+                type:
+                  type: string
+                  enum: [physical, logical]
+                  description: >
+                    physical — used by streaming standbys; managed automatically when
+                    instances > 1.
+                    logical  — used by CDC consumers (Debezium, pg_logical); requires
+                    walLevel=logical on the cluster.
+                plugin:
+                  type: string
+                  description: >
+                    Logical decoding output plugin (pgoutput or wal2json).
+                    Required when type=logical; ignored for physical slots.
+                retentionPolicy:
+                  type: object
+                  description: >
+                    Guards against slot bloat — inactive logical slots can block WAL
+                    removal and eventually crash the primary.
+                  properties:
+                    maxWalSize:
+                      type: string
+                      default: 2Gi
+                      description: Drop the slot if retained WAL exceeds this threshold.
+                    inactiveTimeout:
+                      type: string
+                      default: 24h
+                      description: Drop the slot if no consumer has connected within this window.
+            status:
+              type: object
+              properties:
+                active: { type: boolean }
+                walLag: { type: string }
+                slotName: { type: string }
+---
+# RBAC for the tickethub-db-operator controller
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: tickethub-db-operator
+  namespace: data
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: tickethub-db-operator
+rules:
+  - apiGroups: [db.tickethub.io]
+    resources:
+      - postgresreplicationclusters
+      - postgresreplicationclusters/status
+      - replicationslots
+      - replicationslots/status
+    verbs: [get, list, watch, create, update, patch, delete]
+  - apiGroups: [apps]
+    resources: [statefulsets]
+    verbs: [get, list, watch, create, update, patch, delete]
+  - apiGroups: [""]
+    resources:
+      - pods
+      - pods/exec
+      - services
+      - endpoints
+      - persistentvolumeclaims
+      - configmaps
+      - secrets
+    verbs: [get, list, watch, create, update, patch, delete]
+  - apiGroups: [monitoring.coreos.com]
+    resources: [podmonitors]
+    verbs: [get, list, watch, create, update, patch, delete]
+  - apiGroups: [""]
+    resources: [events]
+    verbs: [create, patch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: tickethub-db-operator
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: tickethub-db-operator
+subjects:
+  - kind: ServiceAccount
+    name: tickethub-db-operator
+    namespace: data
+---
+# TicketHub production PostgresReplicationCluster — 1 primary + 2 hot standbys,
+# quorum-synchronous replication, PgBouncer pooler, WAL archive to Ceph S3.
+apiVersion: db.tickethub.io/v1alpha1
+kind: PostgresReplicationCluster
+metadata:
+  name: tickethub-postgres
+  namespace: data
+  labels:
+    app.kubernetes.io/name: postgres
+    app.kubernetes.io/component: database
+    app.kubernetes.io/part-of: tickethub
+spec:
+  instances: 3                  # postgres-0 (primary), postgres-1, postgres-2 (standbys)
+  postgresVersion: 16
+  replication:
+    synchronousMode: quorum     # primary waits for 1 standby to flush before ack
+    synchronousStandbys: 1
+    walLevel: replica
+    hotStandby: true            # standbys accept read-only queries
+    walKeepSize: 1Gi
+    maxWalSenders: 10
+  walArchive:
+    enabled: true
+    destination: s3://tickethub-wal/postgres  # Ceph RGW bucket (Ch 8)
+    credentialsSecret: ceph-s3-creds
+    retentionDays: 7
+  failover:
+    automaticFailover: true
+    promotionTimeout: 60
+    primaryUpdateStrategy: RollingUpdate
+  connectionPooler:
+    enabled: true
+    replicas: 2
+    poolMode: transaction       # connection returned to pool after each txn
+    maxClientConn: 400
+    defaultPoolSize: 25
+  storage:
+    size: 20Gi
+    storageClass: rook-ceph-block   # reclaimPolicy: Retain (Ch 8)
+    walStorage:
+      size: 10Gi                    # separate disk for pg_wal prevents data-volume bloat
+      storageClass: rook-ceph-block
+  monitoring:
+    enablePodMonitor: true          # operator creates PodMonitor → Prometheus (Ch 26)
+  bootstrap:
+    method: initdb
+    secretName: postgres-db         # provisioned by ExternalSecret (Ch 13)
+  resources:
+    requests:
+      cpu: "500m"
+      memory: 1Gi
+    limits:
+      cpu: "2"
+      memory: 4Gi
+---
+# Logical replication slot for a CDC subscriber (e.g. Debezium → Kafka).
+# walLevel must be "logical" on the cluster to use this.
+apiVersion: db.tickethub.io/v1alpha1
+kind: ReplicationSlot
+metadata:
+  name: tickethub-cdc-slot
+  namespace: data
+spec:
+  clusterRef: tickethub-postgres
+  type: logical
+  plugin: pgoutput
+  retentionPolicy:
+    maxWalSize: 2Gi
+    inactiveTimeout: 24h

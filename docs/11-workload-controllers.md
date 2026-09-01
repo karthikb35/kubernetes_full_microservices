@@ -133,6 +133,26 @@ spec:
 
 Run migrations as a **Job** (often an Argo CD *PreSync* hook, Chapter 28) so schema changes land before the new app version rolls out.
 
+
+### 11.5 Nuances, Gotchas & Architect Considerations
+
+!!! tip "Nuances — subtle behaviours to internalise"
+    - A **ReplicaSet** is the actual controller that maintains the desired pod count — a Deployment manages ReplicaSets, not pods directly. When you do a rolling update, the Deployment creates a NEW ReplicaSet and scales it up while scaling down the old one. The old ReplicaSet (with 0 replicas) is kept as rollback history — `kubectl rollout history` lists them.
+    - **DaemonSets bypass the scheduler's bin-packing** — they place exactly one pod per matching node regardless of available resources. If a DaemonSet pod's resource requests cannot fit on a node, the pod stays `Pending` on that node forever (no eviction of other pods to make room). Size DaemonSet pods conservatively.
+    - **StatefulSet `podManagementPolicy: Parallel`** allows all pods to start simultaneously (faster), but the default `OrderedReady` is safer for databases that require pod-0 to be the primary before pod-1 starts replication. Never switch a Postgres StatefulSet to Parallel without understanding the startup coordination consequences.
+
+!!! warning "Gotchas — traps that catch experienced engineers"
+    - **`kubectl delete rs` on a Deployment-owned ReplicaSet**: the Deployment controller immediately re-creates the ReplicaSet. This is not a rollback — it creates a fresh RS with the same pod template. To rollback, use `kubectl rollout undo deployment/X`.
+    - **StatefulSet rolling update leaves a failed pod blocking the rollout**: if pod-0 fails its readiness probe after the update, the rollout pauses — pods 1 and 2 are never updated. The rollout does not time out or auto-rollback. You must manually fix pod-0 OR run `kubectl rollout undo` to unblock.
+    - **DaemonSet on tainted nodes**: a new `NoSchedule` taint on a node does not evict existing DaemonSet pods. The taint only affects newly scheduled pods. If you retaint a node, DaemonSet pods on it are unaffected until the next pod restart.
+
+!!! question "Architect Considerations"
+    1. **Deployment vs StatefulSet boundary**: the line is "does pod identity matter?" If `orders-pod-7f4d` can replace `orders-pod-a1b2` without any state transfer, use a Deployment. If each pod has a named role (Postgres primary vs standby), use a StatefulSet. The gray area is services that use external session stores (Redis) — they are truly stateless and should use Deployments.
+    2. **DaemonSet for security vs performance**: Falco, node-exporter, and Cilium agents are natural DaemonSets. But a heavy DaemonSet (e.g., a 512Mi baseline logging agent) on every node burns constant cluster-wide RAM. Always benchmark DaemonSet overhead per node type before deploying.
+    3. **Job completion vs Deployment for one-time tasks**: `db-migrate-job.yaml` (repo/manifests/30-workloads/) runs schema migrations as a Job. Migrations run in a Deployment would run in a loop forever. The key Job parameters: `backoffLimit: 3` (max retries), `restartPolicy: Never` (don't restart the pod on failure, create a new one instead).
+    4. **CronJob concurrency policy**: `concurrencyPolicy: Forbid` means if the previous CronJob run is still running when the next trigger fires, the new run is skipped. For backup or batch jobs where overlapping runs would corrupt output, `Forbid` is the right choice; for idempotent jobs, `Allow` gives better throughput.
+    5. **Pod disruption budget interaction with Deployments**: a PDB with `minAvailable: 2` on a 3-replica Deployment means a `kubectl rollout restart` will drain only one pod at a time — the rollout serializes. This is the correct behavior for zero-downtime restarts but multiplies the rollout duration by the replica count.
+
 !!! success "Chapter 11 checklist"
     - Stateless services run as **Deployments** with `maxUnavailable: 0`, immutable image digests.
     - Databases/brokers run as **StatefulSets** (identity + per-pod storage).

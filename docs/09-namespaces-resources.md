@@ -125,6 +125,26 @@ metadata:
     argocd.argoproj.io/sync-wave: "2"    # Cilium in wave 2, apps in wave 9
 ```
 
+
+### 9.5 Nuances, Gotchas & Architect Considerations
+
+!!! tip "Nuances — subtle behaviours to internalise"
+    - **Namespaces are not a security boundary** — a compromised pod in `tickethub` namespace can still reach pods in `data` namespace via ClusterIP Services. Namespaces provide isolation of RBAC, ResourceQuota, and LimitRange; NetworkPolicy provides the actual traffic boundary.
+    - **ResourceQuota does not enforce existing objects**: creating a ResourceQuota on a namespace that already has running pods doesn't evict them even if they exceed the quota. The quota only applies to NEW objects. Audit existing resource usage before applying quota to a live namespace.
+    - **`LimitRange` defaults apply at admission time**, not retroactively. Pods created before the LimitRange was applied keep their original (possibly unlimited) resource settings. This creates a mixed-state namespace that is hard to reason about.
+
+!!! warning "Gotchas — traps that catch experienced engineers"
+    - **Namespace deletion hangs**: `kubectl delete namespace tickethub` hangs if any object in the namespace has a finalizer that hasn't been cleared. Common culprits: Velero backup objects, cert-manager Certificates with `deleteOnTermination`, and CRDs with cross-namespace references. Debug with `kubectl get namespace tickethub -o json | jq '.spec.finalizers'`.
+    - **Cross-namespace Service access requires full DNS name**: a pod in `tickethub` that calls `postgres` (short hostname) resolves to `postgres.tickethub.svc.cluster.local` — which doesn't exist. The full name `postgres.data.svc.cluster.local` is required. Enforce this via ConfigMap (`DATABASE_URL`) values, not code.
+    - **ResourceQuota on `count/pods` without `count/deployments`**: setting a pod quota without a Deployment quota means a misbehaving Deployment can create thousands of pods quickly (e.g., a crash-loop flood) until the quota kicks in — but by then the node is already under pressure. Always pair pod quotas with replica-level limits.
+
+!!! question "Architect Considerations"
+    1. **Namespace proliferation governance**: namespaces are cheap to create but expensive to manage (each needs quota, RBAC, NetworkPolicy, possibly LimitRange). Define a namespace creation policy: who can create namespaces, what template gets applied, how are they decommissioned?
+    2. **Soft vs hard multi-tenancy**: namespaces provide soft tenancy (API isolation + RBAC). Hard tenancy (cryptographic workload isolation) requires separate clusters or vCluster. For a single TicketHub cluster where all tenants are internal teams, namespace-based soft tenancy is sufficient.
+    3. **Bootstrap ordering and GitOps**: the bootstrap order (namespaces first, quotas second, platform CRDs third, workloads last) must be encoded in Argo CD Application sync waves (Chapter 28) so that a full cluster restore doesn't fail on ordering dependencies.
+    4. **LimitRange and VPA interaction**: VPA (Chapter 16) overwrites pod resource requests at admission time — but VPA recommendations must fit within the LimitRange min/max. If they don't, VPA silently skips the pod. Verify LimitRange maximums are generous enough for VPA to work.
+    5. **Quota for ephemeral storage**: `ephemeral-storage` requests/limits are rarely set but can cause node eviction under log-spamming containers. Add `ephemeral-storage` to your LimitRange defaults.
+
 !!! success "Chapter 9 checklist — Part II complete"
     - **Namespaces** created with team labels + **PSA** labels from day one.
     - **ResourceQuota + LimitRange** on every app namespace.

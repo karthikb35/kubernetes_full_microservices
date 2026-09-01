@@ -1741,3 +1741,112 @@ flowchart LR
   SCH --> NS2 --> SNAP --> OBJ
 """ + PALETTE
 
+# ===========================================================================
+# DB REPLICATION CRDs — Ch 14.6 + Ch 25.5
+# ===========================================================================
+
+DIAGRAMS["14-db-replication-arch"] = T + """
+flowchart TB
+  subgraph CR["PostgresReplicationCluster CR — tickethub-postgres (ns data)"]
+    direction TB
+    POOL["PgBouncer pool<br/>transaction mode<br/>rw-pool :5432 / ro-pool :5432"]:::edge
+    subgraph CLUSTER["Postgres instances (StatefulSet)"]
+      direction LR
+      P["postgres-0<br/>PRIMARY<br/>read + write"]:::data
+      S1["postgres-1<br/>STANDBY<br/>hot-standby (RO)"]:::svc
+      S2["postgres-2<br/>STANDBY<br/>hot-standby (RO)"]:::svc
+    end
+    WAL["WAL archive sidecar<br/>→ Ceph S3<br/>s3://tickethub-wal/postgres"]:::plat
+    PM["PodMonitor<br/>postgres_exporter :9187"]:::plat
+  end
+  APP["orders / db-migrate<br/>clients"]:::user
+  PROM["Prometheus"]:::edge
+  APP -->|"rw connection"| POOL
+  POOL -->|"server pool → primary"| P
+  POOL -->|"read-only pool → standbys"| S1
+  POOL -->|"read-only pool → standbys"| S2
+  P -->|"streaming WAL"| S1
+  P -->|"streaming WAL"| S2
+  P -->|"WAL segments"| WAL
+  PM -->|"scrape"| PROM
+  NOTE["1 primary + 2 hot standbys. quorum-sync: primary acks after 1 standby<br/>flushes. PgBouncer multiplexes 400 client conns into 25 server conns.<br/>WAL archive enables PITR recovery from any point in the past 7 days."]
+""" + PALETTE
+
+DIAGRAMS["14-streaming-replication"] = T + """
+sequenceDiagram
+  autonumber
+  participant C  as App / PgBouncer
+  participant P  as Primary (postgres-0)
+  participant W1 as WAL Sender 1
+  participant S1 as Standby-1 WAL Receiver
+  participant S2 as Standby-2 WAL Receiver
+  participant ARC as WAL Archive (Ceph S3)
+  C->>P: BEGIN / DML statements
+  P->>P: Write to shared buffer + WAL buffer
+  P->>W1: Stream WAL segment (async)
+  W1-->>S1: WAL data (TCP stream)
+  W1-->>S2: WAL data (TCP stream)
+  S1->>S1: Write to standby WAL file
+  S2->>S2: Write to standby WAL file
+  S1-->>P: flush ack (LSN position)
+  Note over P,S1: synchronousMode=quorum → primary waits for this ack
+  P-->>C: COMMIT confirmed (RPO = 0 for single-standby loss)
+  S1->>S1: Apply WAL → replay on hot-standby
+  S2->>S2: Apply WAL → replay on hot-standby
+  P->>ARC: Archive completed WAL segment (async)
+  Note over P,ARC: walArchive.enabled=true → PITR to any past second
+"""
+
+DIAGRAMS["25-db-replication-crd"] = T + """
+flowchart LR
+  subgraph CRDS["CRD layer (db.tickethub.io/v1alpha1)"]
+    direction TB
+    PGCRD["CRD<br/>PostgresReplicationCluster"]:::plat
+    RSCRD["CRD<br/>ReplicationSlot"]:::plat
+  end
+  subgraph CRS["Custom Resources (desired state)"]
+    direction TB
+    PGCR["PostgresReplicationCluster<br/>tickethub-postgres<br/>instances:3, sync:quorum<br/>pooler:enabled, walArchive:enabled"]:::edge
+    RSCR["ReplicationSlot<br/>tickethub-cdc-slot<br/>type:logical, plugin:pgoutput"]:::edge
+  end
+  subgraph OP["tickethub-db-operator (reconcile loop)"]
+    direction TB
+    OBS["OBSERVE desired CR<br/>+ actual cluster state"]:::svc
+    DIFF["DIFF — topology, lag,<br/>primary health, slot state"]:::svc
+    ACT["ACT — create/update/delete<br/>workload objects"]:::svc
+    OBS --> DIFF --> ACT --> OBS
+  end
+  subgraph REAL["Real Kubernetes objects created by operator"]
+    direction TB
+    STS["StatefulSet<br/>postgres-0/1/2"]:::data
+    RWSVC["Service rw-pool<br/>→ primary (role=primary)"]:::svc
+    ROSVC["Service ro-pool<br/>→ standbys (role=standby)"]:::svc
+    BNCR["Deployment pgbouncer<br/>2 replicas"]:::edge
+    PM["PodMonitor"]:::plat
+    RSLOT["Postgres logical slot<br/>tickethub-cdc-slot"]:::evt
+  end
+  PGCRD --> PGCR --> OP
+  RSCRD --> RSCR --> OP
+  OP -->|"reconcile"| STS & RWSVC & ROSVC & BNCR & PM & RSLOT
+  STS -.->|"status drift"| OP
+  NOTE["CRDs teach the API two new nouns. The operator encodes DBA knowledge:<br/>switchover, failover, slot retention, pooler config, WAL archiving — all<br/>driven from a single declarative PostgresReplicationCluster manifest."]
+""" + PALETTE
+
+DIAGRAMS["mf-20-postgres-replication-crd"] = T + """
+flowchart LR
+  SEC["Secret postgres-db<br/>(from ExternalSecret)"]:::plat
+  S3SEC["Secret ceph-s3-creds<br/>(WAL archive creds)"]:::plat
+  CRD["CRD PostgresReplication-<br/>Cluster + ReplicationSlot"]:::plat
+  CR["CR tickethub-postgres<br/>+ cdc-slot"]:::edge
+  OP["tickethub-db-operator"]:::svc
+  STS["StatefulSet<br/>postgres-0/1/2"]:::data
+  RWSVC["Service rw-pool :5432<br/>→ primary"]:::svc
+  ROSVC["Service ro-pool :5432<br/>→ standbys"]:::svc
+  POOL["Deployment pgbouncer<br/>2 replicas"]:::edge
+  PM["PodMonitor"]:::plat
+  SEC --> OP
+  S3SEC --> OP
+  CRD --> CR --> OP
+  OP --> STS & RWSVC & ROSVC & POOL & PM
+""" + PALETTE
+

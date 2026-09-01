@@ -136,6 +136,26 @@ Now a stateful set spread `topology.kubernetes.io/zone` puts one replica per rac
     are plenty. Past that, scale etcd to faster disks and more RAM before adding a
     4th/5th member. TicketHub at 12 nodes is comfortably in the small-cluster range.
 
+
+### 3.5 Nuances, Gotchas & Architect Considerations
+
+!!! tip "Nuances — subtle behaviours to internalise"
+    - etcd quorum requires `(n/2)+1` members available. With 3 control-plane nodes you can lose exactly **one** and still write. Losing two makes the API server read-only — no new pod scheduling, no ConfigMap updates, no Secret creation. Plan your maintenance window accordingly.
+    - **Zone labels on bare metal are advisory only** — nothing in Kubernetes enforces that pods assigned to `zone=rack-a` actually run on physical rack A. The labels are only honoured by topology spread constraints and affinity rules you configure. If you mislabel, you silently lose the HA guarantee.
+    - The `infra` pool taint means DaemonSets for platform components (Falco, node-exporter, Cilium agent) must carry the matching toleration or they will not run on infra nodes — leaving them unmonitored. Always audit DaemonSet tolerations when adding a new taint.
+
+!!! warning "Gotchas — traps that catch experienced engineers"
+    - **Adding zone labels after workloads are running** does not re-balance existing pods. You must delete and recreate (or drain-and-uncordon) the pods to trigger rescheduling with topology spread constraints applied.
+    - **Forgetting to taint data nodes** before deploying application workloads: without the taint, a Deployment's pods may be scheduled onto data nodes, competing for CPU/RAM with Postgres and Kafka.
+    - **etcd on shared disk**: etcd is extremely sensitive to disk I/O latency. Running etcd on the same NVMe as application workloads causes sporadic leader elections and `etcdserver: request timed out` errors. Always dedicate a disk or partition exclusively to `/var/lib/etcd`.
+
+!!! question "Architect Considerations"
+    1. **Scale ceiling**: the data pool has 3 nodes. Postgres (3 pods) + Kafka (3 pods) already fills the pool with minimal headroom. At what point does adding a Redis cluster, a second Postgres instance for a new service, or Elasticsearch require a pool expansion plan?
+    2. **Control plane upgrade strategy**: with 3 control-plane nodes you must drain one at a time, leaving the etcd cluster at 2/3 quorum during upgrade. Plan the maintenance window so you never start upgrading the second node while the first is still upgrading.
+    3. **Worker pool segmentation trade-offs**: strict `NoSchedule` taints on data/infra pools mean a traffic spike on the general pool cannot borrow capacity from infra nodes. Is this acceptable, or should infra nodes have `PreferNoSchedule` to allow emergency overflow?
+    4. **Node labels for feature detection**: beyond `pool=` labels, consider labelling nodes with hardware features (`nvidia.com/gpu`, `storage.ssd=nvme`) so workloads can request specific hardware via `nodeSelector` without hard-coding hostnames.
+    5. **Multi-rack failure domains**: if racks share a single top-of-rack switch, a switch failure is a zone failure. Verify physical network redundancy matches your logical zone model — otherwise `topology.kubernetes.io/zone` labels overstate HA.
+
 !!! success "Chapter 3 checklist"
     - **3 control-plane** nodes (odd, HA), spread across physical hosts, **tainted**.
     - An external **VIP + HAProxy** fronting the API servers.

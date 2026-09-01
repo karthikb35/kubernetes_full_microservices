@@ -20,6 +20,7 @@ Every Kubernetes object has the **same four-part shape**. Once you can read one,
 read all of them:
 
 ```yaml
+# See: repo/manifests/ for the full manifest
 apiVersion: apps/v1        # which API group + version defines this kind
 kind: Deployment           # the type of object
 metadata:                  # name, namespace, labels — how it's identified
@@ -183,6 +184,26 @@ install commands aren't black boxes (all also in the Glossary):
 | **static pod** | A pod the kubelet runs directly from a file on the node (not from the API server). The control-plane components run this way (Chapter 5) |
 | **network namespace** | A private network stack (its own interfaces/routes) that isolates a pod's networking |
 | **veth pair** | A virtual "cable" — one end in the pod's namespace, one on the node — that the CNI creates to connect a pod to the network (Chapter 6) |
+
+
+### 0.9 Nuances, Gotchas & Architect Considerations
+
+!!! tip "Nuances — subtle behaviours to internalise"
+    - The **kubeconfig context** is not the same as a user account — it is a named combination of cluster, user credentials, and namespace. You can have many contexts pointing at the same cluster with different credentials; `kubectl config use-context` just changes which combination is active.
+    - `kubectl` communicates only with the **kube-apiserver** — never with kubelets directly. Every operation (even `kubectl exec`) is proxied through the API server.
+    - Helm charts are just **templates** that render to Kubernetes YAML. The actual objects live in the cluster; Helm tracks release state in a Secret in the same namespace. Deleting that Secret orphans the objects — `helm list` shows nothing but the resources still run.
+
+!!! warning "Gotchas — traps that catch experienced engineers"
+    - Confusing `kubectl apply` (declarative, idempotent, tracks last-applied-configuration annotation) with `kubectl create` (imperative, fails if the object already exists). Always prefer `apply` in automation.
+    - Using `kubectl delete pod X` to "restart" a pod managed by a Deployment just causes the Deployment to create a replacement — the correct restart idiom is `kubectl rollout restart deployment/X`.
+    - Assuming all objects are namespaced — `Node`, `PersistentVolume`, `ClusterRole`, `StorageClass`, and `CustomResourceDefinition` are **cluster-scoped**. Passing `-n my-ns` does nothing for them.
+
+!!! question "Architect Considerations"
+    1. **Single kubeconfig vs per-cluster** — should operators use a shared admin kubeconfig (simple but over-privileged) or per-person OIDC tokens (auditable, revokable)? Choose OIDC + `kubectl oidc-login` for any team larger than 2.
+    2. **kubectl version skew** — the client must be within ±1 minor version of the server. Enforce this via a cluster-local `kubectl` wrapper script that pins the correct version.
+    3. **Helm vs raw manifests** — Helm adds release lifecycle management but introduces template complexity. Use Helm for third-party software you consume; use raw manifests (or Kustomize) for your own services where you control the YAML.
+    4. **etcd as the source of truth** — everything in `kubectl get` is a live read from etcd. There is no separate "config database" to sync; the cluster state IS the database.
+    5. **Preview environments** — namespaces make cheap preview environments only if your storage (PVCs, secrets) can also be namespace-scoped and cheaply provisioned. Plan PVC provisioning speed before committing to PR-per-namespace patterns.
 
 !!! success "Chapter 0 checklist — you're ready if you can say…"
     - Every object is `apiVersion` + `kind` + `metadata` + **`spec` (desired)** + `status` (actual).

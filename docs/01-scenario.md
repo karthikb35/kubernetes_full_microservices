@@ -125,6 +125,27 @@ Every application decision above creates an infrastructure requirement we'll ful
 | Secure payments | Secrets, PSA, Falco, image signing | 20, 23, 24 |
 | Zero-downtime releases | Rolling updates, PDB, Argo CD | 18, 28 |
 
+
+### 1.8 Nuances, Gotchas & Architect Considerations
+
+!!! tip "Nuances — subtle behaviours to internalise"
+    - A "stateless" service pod can still hold **in-flight request state** (goroutine/thread memory) — pod loss during a request causes a 5xx to the client. This is unavoidable without client-side retry logic or a service mesh retry policy.
+    - The Kafka `OrderConfirmed` event is **at-least-once** delivered. Notifications must check a Redis dedup key before sending an email to prevent duplicate receipts — a subtle invariant that often gets dropped when the Notifications service is rewritten.
+    - The 10-minute seat-hold TTL must be enforced in three places consistently: Redis key TTL, application-level expiry check on the Orders write path, AND the UI countdown timer. Any mismatch causes ghost holds (seats held but expired) or double-booking (hold released while user still on checkout page).
+
+!!! warning "Gotchas — traps that catch experienced engineers"
+    - **Shared database anti-pattern**: connecting Orders directly to `users_db` to avoid an RPC call seems harmless but creates a hidden schema coupling. Resist it — it is the most common path back to a distributed monolith.
+    - **Synchronous saga orchestration** means Orders holds a DB transaction open while waiting for Inventory and Payments RPCs. Slow external calls (Stripe latency spikes) translate directly to Postgres connection exhaustion. Timeout every external RPC and compensate explicitly.
+    - **Missing idempotency keys on payment capture**: if the Orders pod restarts mid-saga after `Authorize()` but before writing the result, it may call `Authorize()` again on retry — resulting in a double-charge. Every payment RPC must carry a stable idempotency key derived from the `orderId`.
+
+!!! question "Architect Considerations"
+    1. **Thundering-herd on sale open**: 50,000 users hit the Inventory service in the same second. Is Redis `SETNX` for holds safe under this load, or do you need a distributed queue (Redis Streams, Kafka) to serialize the seat-hold requests?
+    2. **Stripe outage strategy**: should failed payment attempts be queued in Kafka and retried asynchronously (better UX for users), or returned as 402 immediately (simpler, but worse conversion)?
+    3. **Eventual consistency visibility**: when a seat is held by User A, how quickly does the event page for User B show it as unavailable? A 10-second lag is acceptable for concerts; a 1-second lag is acceptable for limited edition sneakers. Define the SLO before building.
+    4. **Decomposition boundary review**: is a separate Payments service justified for TicketHub, or should Orders own payment capture? The boundary matters because it determines who handles Stripe webhook callbacks.
+    5. **Event schema versioning**: `OrderConfirmed` v1 carries `{ orderId, userId, seats[] }`. When you add `promoCode` in v2, Notifications (consuming v1) must not break. Plan Avro/Protobuf schema registry or envelope versioning from the start.
+    6. **Capacity model**: a single sold-out stadium event generates ~60,000 concurrent users over 5 minutes. Work backwards to per-service RPS, then to pod count, then to node count — this is the exercise that determines your HPA max replicas in Chapter 16.
+
 !!! success "Chapter 1 checklist — the architect's design outputs"
     - A **service catalog** with one clear responsibility per service.
     - A defined **interface/contract** for each (protocol + endpoints).

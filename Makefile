@@ -21,6 +21,20 @@ pdf: ## Build the textbook PDF
 	pip install -q markdown xhtml2pdf Pillow
 	python build_pdf.py
 
+html: ## Build the GitHub Pages static site (requires mkdocs-material)
+	pip install -q mkdocs-material mkdocs-minify-plugin pymdown-extensions Pillow
+	cp -r assets docs/
+	mkdocs build
+
+
+serve: ## Serve the site locally at http://127.0.0.1:8000
+	pip install -q mkdocs-material mkdocs-minify-plugin pymdown-extensions Pillow
+	cp -r assets docs/
+	mkdocs serve
+
+enrich: ## Add nuances / gotchas / architect sections to all doc chapters
+	python enrich_docs.py
+
 run-gateway: ## Run the gateway service locally (:8080)
 	cd repo/services/gateway && go run ./cmd/gateway
 
@@ -32,4 +46,5 @@ run-frontend: ## Run the frontend dev server (:3000)
 
 clean: ## Remove build artifacts
 	rm -f k8s-architecture.pdf
+	rm -rf site/ docs/assets/
 	rm -rf repo/services/frontend/dist repo/services/frontend/node_modules

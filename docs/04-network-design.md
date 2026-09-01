@@ -114,6 +114,26 @@ Inside the cluster, **CoreDNS** resolves service names. Every Service gets a sta
     - Keep the **MetalLB pool** comfortably larger than your expected number of
       `LoadBalancer` services so you never run out of external IPs.
 
+
+### 4.5 Nuances, Gotchas & Architect Considerations
+
+!!! tip "Nuances — subtle behaviours to internalise"
+    - Pod CIDRs (`10.244.0.0/16`) and Service CIDRs (`10.96.0.0/12`) must **never overlap** with each other or with the node network (`10.10.0.0/16`). Cilium allocates a `/24` per node from the pod CIDR — with `/16` you can have up to 256 nodes before you need a larger CIDR (plan for growth from day one).
+    - **DNS round-robin for Services is not load balancing** — it is address discovery. Cilium's eBPF does the actual per-connection load balancing at the kernel level, not at the DNS layer. This means long-lived gRPC streams to a Service IP may stay on a single backend pod until the connection is closed.
+    - Node-to-node traffic uses the **node network CIDR** (`10.10.0.0/16`), not the pod CIDR. Firewall rules between nodes must allow the full pod CIDR range (for pod-to-pod across nodes) AND the Service CIDR (for return traffic through ClusterIP virtual IPs).
+
+!!! warning "Gotchas — traps that catch experienced engineers"
+    - **Picking a pod CIDR that overlaps with a future on-prem subnet**: once a cluster is bootstrapped you cannot change the pod or service CIDRs without rebuilding. Reserve a block of RFC 1918 address space (e.g., `100.64.0.0/10`, CGNAT range) that will never appear in your corporate network.
+    - **kube-dns / CoreDNS hardcoded to `10.96.0.10`**: if you choose a non-standard service CIDR, the CoreDNS ClusterIP will be different — update all references, including the kubelet `--cluster-dns` flag in the kubeadm config, or DNS resolution fails cluster-wide.
+    - **MetalLB pool overlapping with node IPs**: MetalLB hands out IPs from `10.10.0.200-250` as LoadBalancer Service IPs. If a new server is assigned an IP in that range, ARP conflicts will cause intermittent routing failures. Document the split in your IP address management (IPAM) system and enforce it.
+
+!!! question "Architect Considerations"
+    1. **Address space future-proofing**: `10.244.0.0/16` gives 65,536 pod IPs. With 256 nodes × 110 pods each = 28,160 pods max. A `/15` gives twice the room; a `/14` four times. Choose based on your 3-year node growth forecast, not your current node count.
+    2. **East-West encryption**: should all pod-to-pod traffic be encrypted (WireGuard overlay in Cilium) or only traffic crossing a trust boundary? Encryption adds ~5% CPU overhead. For TicketHub's on-prem cluster where physical network access is controlled, selective encryption (gateway ↔ payments) may suffice.
+    3. **Egress NAT design**: pods use the node IP as the SNAT address for outbound traffic. If Payments calls Stripe from any of 9 worker IPs, Stripe must whitelist all 9. Consider a dedicated egress IP (Cilium EgressGateway) for external API calls from specific namespaces.
+    4. **IPv6 dual-stack readiness**: Cilium supports dual-stack. If your data center is moving toward IPv6, plan the pod and service CIDRs to include `fd00::/112` ranges from the start — retrofitting IPv6 post-launch is expensive.
+    5. **BGP vs ARP for MetalLB**: `L2 ARP` mode is simpler but has a single-node failure window (the node holding the ARP entry). `BGP` mode distributes the announcement but requires a BGP router in your rack. Choose based on your network team's capabilities.
+
 !!! success "Chapter 4 checklist — the network blueprint"
     - A written **IP plan**: node, MetalLB, Pod, and Service ranges that **don't overlap**.
     - **VLAN separation** of management vs application traffic.

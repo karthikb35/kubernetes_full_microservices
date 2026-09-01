@@ -94,6 +94,26 @@ strategy:
     the vault holds the value) or Sealed Secrets. Argo CD syncs the reference; the real
     credential never lands in a commit.
 
+
+### 28.5 Nuances, Gotchas & Architect Considerations
+
+!!! tip "Nuances — subtle behaviours to internalise"
+    - **Argo CD `sync` applies manifests in dependency order via sync waves**, but the wave mechanism is opt-in (annotation `argocd.argoproj.io/sync-wave: "N"`). Without explicit wave annotations, Argo CD applies all resources simultaneously — which can create ordering failures (e.g., a Deployment being created before its ConfigMap or Secret exists).
+    - **Argo CD App of Apps does not automatically prune child Applications when removed from the parent**: if you remove a child Application from the App of Apps, Argo CD marks it `OutOfSync` but doesn't delete it unless `prune: true` is set. Dangling Applications keep running and consuming resources indefinitely.
+    - **`kubectl apply` vs Argo CD sync**: Argo CD uses server-side apply with a `argocd` field manager. If you also run `kubectl apply` manually on the same resource, field manager conflicts can cause Argo CD to revert your changes or generate `FieldValueConflict` errors. All changes to Argo CD-managed resources MUST go through git.
+
+!!! warning "Gotchas — traps that catch experienced engineers"
+    - **Argo CD sync with `--force` flag deletes and recreates resources**: unlike `kubectl apply --force`, this is destructive — Argo CD will DELETE a running StatefulSet and recreate it, causing a full restart. Only use force sync when absolutely necessary (stuck CRD migration), never as a routine operation.
+    - **Repo server access to private registries**: Argo CD's repo server must have git credentials to pull from private repos AND registry credentials if using Helm OCI charts from a private registry. Missing credentials cause silent sync failures with opaque "repository not found" errors.
+    - **Automated sync + Kyverno mutating webhooks**: Argo CD's drift detection compares the DESIRED manifest (git) against the LIVE manifest (cluster). Kyverno's mutation adds fields to the live manifest that aren't in git — causing Argo CD to always show the app as `OutOfSync`. Configure Argo CD's `ignoreDifferences` for Kyverno-injected fields to prevent false-positive sync loops.
+
+!!! question "Architect Considerations"
+    1. **Mono-repo vs multi-repo**: a single `repo/manifests/` tree (as in this project) is easy to navigate but creates a single failure domain for gitops — a broken PR that blocks merge prevents ALL service updates. A multi-repo layout (one repo per service team) gives team autonomy but multiplies Argo CD Application count and makes cross-service dependencies harder to express.
+    2. **Secrets in git with Argo CD**: application secrets cannot be stored in plaintext in git. Options: Sealed Secrets (encrypted in git, decrypted in cluster), External Secrets (fetched from Vault at sync time), Argo CD Vault Plugin (template substitution at sync time). External Secrets is the cleanest architecture — git contains only the ExternalSecret declaration, Vault holds the actual value.
+    3. **Sync windows for compliance**: some environments require that no changes are applied between Friday 5pm and Monday 9am (change freeze). Argo CD `SyncWindow` supports this — define `denyWindows` for change freeze periods. Without this, an auto-synced Argo CD will apply a Friday 11pm merge immediately.
+    4. **Rollback strategy**: Argo CD "rollback" is `git revert` + sync. There is no in-cluster rollback button that is independent of git state. Ensure your team understands this: to roll back a bad deploy, you must create a git commit that reverts the change and merge it to main. Design your branch protection and merge strategy around this constraint.
+    5. **ApplicationSet for multi-environment**: use Argo CD ApplicationSet with a directory generator to automatically create Applications for every environment directory (`envs/staging/`, `envs/prod/`). This avoids manually copying Application objects between environments and ensures all environments have the same Application structure.
+
 !!! success "Chapter 28 checklist"
     - **Git is the single source of truth**; changes flow through reviewed PRs.
     - **Argo CD** syncs with `selfHeal` + `prune`; manual drift is reverted.

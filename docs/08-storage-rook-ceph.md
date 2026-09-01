@@ -116,6 +116,7 @@ volumeBindingMode: WaitForFirstConsumer # bind only once a pod is scheduled
 A stateful workload just asks — the platform delivers:
 
 ```yaml
+# See: repo/manifests/ for the full manifest
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
@@ -148,6 +149,26 @@ For StatefulSets (Postgres, Kafka), we don't even write PVCs by hand — `volume
     Databases want **RWO block** storage — a single writer with block semantics. Trying
     to run Postgres on an **RWX** shared filesystem invites corruption. Reserve **RWX**
     (CephFS) for genuinely shared, concurrency-safe use (static assets, uploads).
+
+
+### 8.5 Nuances, Gotchas & Architect Considerations
+
+!!! tip "Nuances — subtle behaviours to internalise"
+    - Ceph's **CRUSH map** determines which OSDs receive each placement group's replicas. Without explicit CRUSH rules, all three replicas of a PG can land on OSDs of the same host — providing no host-level redundancy even with `replicasPerFailureDomain: 1`. Verify the CRUSH topology with `ceph osd crush tree` after cluster bootstrap.
+    - **`reclaimPolicy: Retain`** means deleting a PVC does NOT delete the backing Ceph RBD image. The image persists in Ceph consuming space indefinitely. You must manually `kubectl delete pv <name>` AND run `rbd rm` or the Rook cleanup policy to actually reclaim the storage.
+    - The StorageClass `volumeBindingMode: WaitForFirstConsumer` delays PV provisioning until the pod is scheduled. This is intentional for topology awareness — but it means `kubectl get pvc` will show `Pending` until the first pod is scheduled, which can look like a bug during initial cluster setup.
+
+!!! warning "Gotchas — traps that catch experienced engineers"
+    - **OSD placement on VMs backed by the same Ceph cluster**: if your worker VMs' root disks are Ceph RBD images and you then run Ceph OSDs on those VMs, a Ceph outage prevents the VMs from booting, which prevents Ceph from recovering. Never run Ceph OSDs on VMs whose disks depend on Ceph.
+    - **Ceph health `HEALTH_WARN` on OSDs_down during node drain**: when you drain a data node for maintenance, its OSDs go down. Ceph begins backfilling immediately. If the node comes back within `osd_down_out_interval` (default 600s), no data movement occurs. If it takes longer, Ceph redistributes all PGs — generating significant I/O. Increase `osd_down_out_interval` during planned maintenance windows.
+    - **Block device selection for OSDs**: Rook requires dedicated block devices (no partition table, no filesystem). A freshly provisioned VM disk that was previously used as a Ceph OSD may have leftover LVM signatures — clean it with `wipefs -a /dev/sdX` and `dd if=/dev/zero of=/dev/sdX bs=1M count=10` before Rook can claim it.
+
+!!! question "Architect Considerations"
+    1. **OSD count and raw capacity planning**: Ceph with 3× replication means usable capacity = raw capacity / 3. For 9 OSDs × 1TB each = 3TB raw, you get ~3TB usable. This needs to cover all PVCs plus the internal Ceph metadata overhead (~5%). Model capacity growth against your planned 3-year PVC growth rate.
+    2. **Separate OSD disks for block vs object**: Ceph block (RBD) and object (RGW) workloads have very different I/O patterns (random IOPS vs sequential throughput). Separate OSDs using all-flash for block and HDD for object storage if your hardware budget allows it.
+    3. **Rook operator upgrade isolation**: Rook manages CephCluster upgrades — but a Rook operator upgrade and a Ceph upgrade are separate events. Always upgrade Rook first, then trigger the Ceph image upgrade via the CephCluster CR. Never skip a Ceph minor version.
+    4. **Multi-site replication for DR**: Ceph RGW supports multi-site replication of object storage between clusters. If your DR strategy requires off-site data copies (Chapter 27), the Ceph multi-site design must be in place before the cluster goes live.
+    5. **Performance testing before production**: run `fio` benchmarks against both RBD and CephFS before declaring the storage layer production-ready. Key targets: Postgres needs > 5,000 random IOPS at 4K block size; Kafka needs > 200 MB/s sequential write throughput per broker.
 
 !!! success "Chapter 8 checklist"
     - **Rook operator + CephCluster** running on the **data** pool (3 mons, OSDs on NVMe).
