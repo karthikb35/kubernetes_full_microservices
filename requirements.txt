@@ -1,0 +1,4 @@
+mkdocs-material
+mkdocs-minify-plugin
+pymdown-extensions
+Pillow
