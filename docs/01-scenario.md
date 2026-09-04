@@ -50,7 +50,7 @@ An architect defines **contracts**, not implementations. Each service exposes a 
 
 | Service | Protocol | Key endpoints / interface | Consumed by |
 |---------|----------|---------------------------|-------------|
-| API Gateway | HTTPS (REST) | `/*` → routes to services; verifies JWT | Internet (via Ingress) |
+| API Gateway | HTTPS (REST) | `/*` → routes to services; verifies JWT | Internet (via the Gateway API) |
 | Users/Auth | REST + gRPC | `POST /login`, `POST /register`, `GET /verify` | Gateway, all services (token verify) |
 | Catalog | REST + gRPC | `GET /events`, `GET /events/{id}`, `GET /venues/{id}` | Gateway, Search |
 | Inventory | gRPC | `HoldSeats()`, `ReleaseSeats()`, `ConfirmSeats()` | Orders |

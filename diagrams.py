@@ -75,7 +75,7 @@ flowchart TB
   CDN["CDN / DNS<br/>(static assets, TLS)"]:::edge
   subgraph DC["On-prem Data Center - Kubernetes Cluster"]
     direction TB
-    GW["API Gateway + Ingress"]:::edge
+    GW["Edge: Gateway API<br/>+ API Gateway svc"]:::edge
     APP["TicketHub microservices"]:::svc
     DATA["Stateful data plane<br/>Postgres - Redis - Kafka - Object store"]:::data
     GW --> APP --> DATA
@@ -91,7 +91,7 @@ flowchart TB
 DIAGRAMS["01-microservices"] = T + """
 flowchart TB
   subgraph EDGE["Edge / North-South"]
-    ING["NGINX Ingress"]:::edge
+    ING["Cilium Gateway API"]:::edge
     GWSVC["API Gateway<br/>authN, routing, rate-limit"]:::edge
   end
   subgraph CORE["Core business services"]
@@ -260,7 +260,7 @@ flowchart TB
     D3["worker-data-3"]:::data
   end
   subgraph INF["Infra/edge pool (2 nodes)"]
-    I1["worker-infra-1<br/>ingress, monitoring"]:::plat
+    I1["worker-infra-1<br/>Gateway, monitoring"]:::plat
     I2["worker-infra-2"]:::plat
   end
   LB --> CP1 & CP2 & CP3
@@ -288,7 +288,7 @@ flowchart LR
     direction TB
     GEN["pool=general<br/>(no taint)<br/>stateless services"]:::svc
     DATA["pool=data<br/>taint: data=true:NoSchedule<br/>Postgres, Kafka, Ceph OSD"]:::data
-    INFRA["pool=infra<br/>taint: infra=true:NoSchedule<br/>ingress, Prometheus, Grafana"]:::plat
+    INFRA["pool=infra<br/>taint: infra=true:NoSchedule<br/>Gateway, Prometheus, Grafana"]:::plat
   end
   NOTE["Workloads request a pool via nodeSelector + tolerations.<br/>Taints keep general apps OFF data/infra nodes."]
 """ + PALETTE
@@ -313,7 +313,7 @@ DIAGRAMS["04-north-south"] = T + """
 flowchart LR
   U["User"]:::user --> DNS["DNS -> MetalLB VIP"]:::edge
   DNS --> LB["MetalLB (L2/BGP)<br/>assigns external IP"]:::edge
-  LB --> ING["NGINX Ingress Controller"]:::edge
+  LB --> ING["Cilium Gateway (Gateway API)"]:::edge
   ING --> SVC["Service (ClusterIP)"]:::svc
   SVC --> POD["Pod (endpoint)"]:::svc
   NOTE["North-South = traffic entering the cluster from outside.<br/>MetalLB gives bare-metal the 'LoadBalancer' service type<br/>that cloud providers give for free."]
@@ -421,7 +421,7 @@ flowchart LR
 """ + PALETTE
 
 # ===========================================================================
-# CHAPTER 7 — MetalLB + NGINX Ingress
+# CHAPTER 7 — MetalLB + Cilium Gateway API
 # ===========================================================================
 
 DIAGRAMS["07-metallb-arch"] = T + """
@@ -440,29 +440,29 @@ flowchart TB
 DIAGRAMS["07-ingress-flow"] = T + """
 flowchart TB
   U["User https://tickethub.com"]:::user --> LBIP["MetalLB IP 10.20.0.100<br/>(LoadBalancer svc)"]:::edge
-  LBIP --> INGC["NGINX Ingress Controller pod"]:::edge
-  INGC -->|"host/path rules"| R1["/ -> frontend-svc"]:::svc
+  LBIP --> INGC["Cilium Gateway (Gateway API)"]:::edge
+  INGC -->|"HTTPRoute rules"| R1["/ -> frontend-svc"]:::svc
   INGC --> R2["/api -> gateway-svc"]:::svc
   INGC --> R3["/search -> search-svc"]:::svc
   R1 --> FE["frontend pods"]:::svc
   R2 --> GW["gateway pods"]:::svc
-  NOTE["One Ingress object declares routing + TLS. The controller turns<br/>it into live NGINX config. MetalLB gives the controller its public IP."]
+  NOTE["A Gateway declares listeners + TLS; HTTPRoutes declare routing.<br/>Cilium programs the data plane. MetalLB gives the Gateway its public IP."]
 """ + PALETTE
 
 DIAGRAMS["07-cert-manager"] = T + """
 flowchart LR
-  ING["Ingress<br/>cluster-issuer: letsencrypt<br/>tls secretName: tickethub-tls"]:::svc
+  ING["Gateway<br/>cluster-issuer: letsencrypt<br/>tls secretName: tickethub-tls"]:::svc
   CM["cert-manager<br/>(operator)"]:::edge
   LE["Let's Encrypt<br/>(ACME CA)"]:::plat
   SEC["Secret tickethub-tls<br/>(cert + key)"]:::data
-  NGINX["NGINX Ingress<br/>serves HTTPS"]:::edge
+  NGINX["Cilium Gateway<br/>serves HTTPS"]:::edge
   ING -->|"1. annotation seen"| CM
   CM -->|"2. request cert + HTTP-01 challenge"| LE
   LE -->|"3. fetch /.well-known/... token"| NGINX
   LE -->|"4. signed cert"| CM
   CM -->|"5. write"| SEC
   SEC -->|"6. mount + serve"| NGINX
-  NOTE["cert-manager sees the annotation, proves domain ownership via the<br/>HTTP-01 challenge (served through NGINX), gets a signed cert from<br/>Let's Encrypt, stores it in the Secret, and auto-renews before expiry."]
+  NOTE["cert-manager sees the annotation, proves domain ownership via the<br/>HTTP-01 challenge (served through a temporary HTTPRoute on the Gateway),<br/>gets a signed cert from Let's Encrypt, stores it in the Secret, auto-renews."]
 """ + PALETTE
 
 # ===========================================================================
@@ -595,7 +595,7 @@ DIAGRAMS["09-bootstrap-order"] = T + """
 flowchart LR
   S1["1. Cluster (kubeadm)"]:::edge --> S2["2. CNI (Cilium)"]:::svc
   S2 --> S3["3. Storage (Rook-Ceph)<br/>+ StorageClasses"]:::data
-  S3 --> S4["4. LB + Ingress<br/>(MetalLB, NGINX)"]:::edge
+  S3 --> S4["4. LB + Gateway<br/>(MetalLB, Cilium GW API)"]:::edge
   S4 --> S5["5. Platform<br/>(cert-manager, ESO)"]:::plat
   S5 --> S6["6. Security + policy<br/>(PSA, Kyverno, Falco)"]:::plat
   S6 --> S7["7. Observability"]:::plat
@@ -758,13 +758,13 @@ flowchart LR
 
 DIAGRAMS["12-request-path"] = T + """
 flowchart LR
-  U["User"]:::user --> ING["Ingress (NGINX)"]:::edge
+  U["User"]:::user --> ING["Cilium Gateway (Gateway API)"]:::edge
   ING -->|"/api"| GW["gateway-svc<br/>ClusterIP"]:::svc
   GW --> GWP["gateway pod"]:::svc
   GWP -->|"orders-svc"| OS["orders-svc"]:::svc
   OS --> OP["orders pod"]:::svc
   OP -->|"postgres.data"| DB[("postgres-0")]:::data
-  NOTE["North-south enters via Ingress. East-west hops go service-to-service<br/>by ClusterIP DNS name. Every hop is a Service, never a raw pod IP."]
+  NOTE["North-south enters via the Gateway. East-west hops go service-to-service<br/>by ClusterIP DNS name. Every hop is a Service, never a raw pod IP."]
 """ + PALETTE
 
 # ===========================================================================
@@ -1341,7 +1341,7 @@ DIAGRAMS["29-request-journey"] = T + """
 flowchart TB
   U["User buys a ticket<br/>https://tickethub.com/api/orders"]:::user
   U --> DNS["DNS -> MetalLB IP (Ch 7)"]:::edge
-  DNS --> ING["NGINX Ingress + TLS (Ch 7,24)"]:::edge
+  DNS --> ING["Cilium Gateway + TLS (Ch 7,24)"]:::edge
   ING -->|"NetworkPolicy allows (Ch 21)"| GW["gateway pod<br/>RBAC SA, restricted PSA (Ch 19,20)"]:::svc
   GW --> OR["orders pod<br/>HPA-scaled (Ch 16)"]:::svc
   OR -->|"Cilium eBPF svc LB (Ch 6,12)"| PAY["payments pod<br/>PriorityClass critical (Ch 17)"]:::svc
@@ -1355,7 +1355,7 @@ DIAGRAMS["29-full-stack"] = T + """
 flowchart TB
   L1["Bare metal -> KVM/Proxmox VMs (Ch 2)"]:::plat
   L2["12-node kubeadm HA cluster (Ch 3,5)"]:::plat
-  L3["Cilium CNI + MetalLB + NGINX + Rook-Ceph (Ch 6,7,8)"]:::edge
+  L3["Cilium CNI + MetalLB + Gateway API + Rook-Ceph (Ch 6,7,8)"]:::edge
   L4["Namespaces + quotas + bootstrap order (Ch 9)"]:::edge
   L5["9 containerized services: Deploy/StatefulSet/DaemonSet (Ch 10-14)"]:::svc
   L6["Resources + autoscaling + scheduling + health (Ch 15-18)"]:::svc
@@ -1409,8 +1409,8 @@ DIAGRAMS["mf-10-cert-manager-issuers"] = T + """
 flowchart LR
   ST["ClusterIssuer<br/>letsencrypt-staging"]:::plat
   PR["ClusterIssuer<br/>letsencrypt (prod)"]:::plat
-  ING["Ingress tickethub<br/>annotation: cluster-issuer"]:::edge
-  ACME["Let's Encrypt ACME<br/>HTTP-01 via nginx"]:::user
+  ING["Gateway tickethub<br/>annotation: cluster-issuer"]:::edge
+  ACME["Let's Encrypt ACME<br/>HTTP-01 via Gateway HTTPRoute"]:::user
   SEC["Secret tickethub-tls"]:::data
   ING --> PR --> ACME
   ACME --> SEC --> ING
@@ -1420,12 +1420,13 @@ DIAGRAMS["mf-10-ingress-tickethub"] = T + """
 flowchart LR
   U["Client HTTPS"]:::user
   LB["MetalLB LB IP"]:::edge
-  ING["Ingress tickethub<br/>host tickethub.example.com<br/>TLS: tickethub-tls"]:::edge
+  ING["Gateway tickethub<br/>listeners :80/:443<br/>TLS: tickethub-tls"]:::edge
+  RT["HTTPRoute tickethub<br/>host tickethub.example.com"]:::edge
   FE["Service frontend:80"]:::svc
   GW["Service gateway:8080"]:::svc
-  U --> LB --> ING
-  ING -->|"/"| FE
-  ING -->|"/api"| GW
+  U --> LB --> ING --> RT
+  RT -->|"/"| FE
+  RT -->|"/api"| GW
 """ + PALETTE
 
 DIAGRAMS["mf-10-metallb-pool"] = T + """

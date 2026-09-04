@@ -95,7 +95,7 @@ because Chapters 19–22 each live at one of them:
 
 ### 0.3 Helm in five minutes
 
-Many platform components in this book (Cilium, NGINX Ingress, Falco, the Prometheus stack)
+Many platform components in this book (Cilium, the Cilium Gateway API, Falco, the Prometheus stack)
 are installed with **Helm** — the Kubernetes package manager. You'll see `helm install …`
 repeatedly, so here's the whole model:
 

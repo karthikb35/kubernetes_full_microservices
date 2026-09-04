@@ -1,0 +1,86 @@
+# North-South entrypoint: Kubernetes Gateway API routing to TicketHub services (Ch 7).
+# Replaces the legacy NGINX Ingress object. Implemented by Cilium's Gateway API
+# controller (gatewayClassName: cilium), which provisions a type=LoadBalancer
+# Service that MetalLB assigns an external IP to. TLS is terminated at the HTTPS
+# listener using a cert-manager-issued Secret (Ch 18).
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: tickethub
+  namespace: tickethub
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod   # cert-manager fills tickethub-tls
+spec:
+  gatewayClassName: cilium
+  listeners:
+    - name: http                        # plain HTTP: ACME HTTP-01 challenge + redirect
+      protocol: HTTP
+      port: 80
+      hostname: tickethub.example.com
+      allowedRoutes:
+        namespaces:
+          from: Same
+    - name: https                       # TLS terminated here
+      protocol: HTTPS
+      port: 443
+      hostname: tickethub.example.com
+      tls:
+        mode: Terminate
+        certificateRefs:
+          - kind: Secret
+            name: tickethub-tls
+      allowedRoutes:
+        namespaces:
+          from: Same
+---
+# Application routing (replaces the Ingress `rules:` block). Unlike Ingress, the
+# route is a first-class, typed object owned by the app team; the Gateway above
+# is owned by the platform team. Matches are ordered by specificity: /api routes
+# to the gateway service, everything else to the frontend.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: tickethub
+  namespace: tickethub
+spec:
+  parentRefs:
+    - name: tickethub
+      sectionName: https
+  hostnames:
+    - tickethub.example.com
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /api
+      backendRefs:
+        - name: gateway
+          port: 8080
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+      backendRefs:
+        - name: frontend
+          port: 80
+---
+# Force HTTPS: any plain-HTTP request is 301-redirected to the HTTPS listener.
+# The ACME HTTP-01 challenge route cert-manager creates is a more specific path
+# match, so it takes precedence and is not redirected.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: tickethub-https-redirect
+  namespace: tickethub
+spec:
+  parentRefs:
+    - name: tickethub
+      sectionName: http
+  hostnames:
+    - tickethub.example.com
+  rules:
+    - filters:
+        - type: RequestRedirect
+          requestRedirect:
+            scheme: https
+            statusCode: 301

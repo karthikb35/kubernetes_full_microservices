@@ -13,7 +13,7 @@ namespace is stamped with a `team` label (ownership) and Pod Security Admission
 |---|---|---|---|
 | Namespace | `tickethub` | app | **restricted** — the app tier |
 | Namespace | `data` | data | baseline — Postgres, Kafka |
-| Namespace | `platform` | platform | baseline — ingress, storage, cert-manager |
+| Namespace | `platform` | platform | baseline — Gateway API, storage, cert-manager |
 | Namespace | `monitoring` | platform | baseline — Prometheus, Tempo, OTel |
 | Namespace | `security` | platform | **privileged** — Falco needs host access |
 

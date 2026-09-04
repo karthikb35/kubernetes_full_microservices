@@ -29,11 +29,14 @@ primer](00b-prerequisites.md)**.
 | **EndpointSlice** | The auto-maintained list of **Ready** pod IPs behind a Service; readiness probes gate membership. | 12 |
 | **etcd** | The cluster's key/value database holding all state. Consensus via **Raft**; needs an odd quorum (3 or 5). | 3, 5 |
 | **front-proxy CA** | A separate CA that signs the aggregation-layer client cert, isolating extension/aggregated API servers from the main cluster CA. | 7A |
+| **Gateway API** | The role-oriented successor to Ingress: `GatewayClass` (infra provider), `Gateway` (platform team owns listeners/TLS/IP), `HTTPRoute` (app team owns paths/backends). Delivered as CRDs; TicketHub uses Cilium's implementation. | 7 |
 | **gRPC** | A fast, strongly-typed, binary RPC protocol (HTTP/2) for **service-to-service** calls. TicketHub uses gRPC internally and REST/JSON at the edge. | 1, 12 |
 | **Headless Service** | A Service with `clusterIP: None` that returns individual pod IPs and gives StatefulSet pods stable per-pod DNS (`postgres-0.postgres…`). | 12, 14 |
 | **Helm** | The Kubernetes package manager: a **chart** (templated YAML) + your **values** → an installed **release**. | 0 |
-| **hostNetwork** | A pod setting that puts the pod on the *node's* network namespace (bypassing the Pod CIDR). Used sparingly (e.g. ingress). | 4 |
+| **hostNetwork** | A pod setting that puts the pod on the *node's* network namespace (bypassing the Pod CIDR). Used sparingly (e.g. edge/Gateway data plane). | 4 |
 | **HPA / VPA / KEDA / Cluster Autoscaler** | Autoscalers for, respectively: replica **count**, per-pod **size**, **event-driven** replicas, and **node** count. | 16 |
+| **HTTPRoute** | A Gateway API object owned by an app team that attaches to a `Gateway` and declares path/header/method matches and weighted backends. Replaces the routing rules of an Ingress. | 7 |
+| **Ingress** | The original (now **feature-frozen**) Kubernetes object for HTTP edge routing + TLS. Superseded by the **Gateway API**; TicketHub migrated off it. | 7 |
 | **IPAM** | IP Address Management — how the CNI hands out pod IPs from the Pod CIDR. | 6 |
 | **JWT** | JSON Web Token — a signed, self-contained token proving a user's identity/claims. The Users/Auth service issues them; the gateway verifies them. | 1 |
 | **keepalived / VRRP** | keepalived uses the VRRP protocol to float a **virtual IP** between nodes, so the API endpoint stays reachable if one load-balancer node dies. | 3 |

@@ -13,14 +13,14 @@ We have 12 VMs. Now we decide **which VM does what**. The topology of a cluster 
 | **Control plane** | 3 | apiserver, etcd, scheduler, controller-manager | control-plane role — auto-tainted `NoSchedule` |
 | **General workers** | 4 | Stateless services (UI, gateway, orders, ...) | `pool=general` |
 | **Data workers** | 3 | Postgres, Kafka, Redis, Ceph OSDs | `pool=data`, taint `data=true:NoSchedule` |
-| **Infra/edge workers** | 2 | Ingress, Prometheus, Grafana, Loki | `pool=infra`, taint `infra=true:NoSchedule` |
+| **Infra/edge workers** | 2 | Gateway API, Prometheus, Grafana, Loki | `pool=infra`, taint `infra=true:NoSchedule` |
 
 !!! mental "Mental model — brain, hands, vaults, doors"
     - **Control plane = the brain.** It makes decisions but runs no app workloads.
     - **General workers = the hands.** They do the everyday stateless work.
     - **Data workers = the vaults.** Guarded (tainted), they hold precious state on
       fast local disks.
-    - **Infra workers = the doors & cameras.** Ingress (the doors) and monitoring
+    - **Infra workers = the doors & cameras.** The Gateway (the doors) and monitoring
       (the cameras) live here, isolated from noisy app pods.
 
 ### 3.2 The control plane — what runs on it

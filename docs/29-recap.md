@@ -9,8 +9,8 @@ We began with bare-metal servers in a data center and ended with a secured, obse
 Trace a single `POST /api/orders` from tap to confirmation:
 
 1. **DNS → MetalLB** (Ch 7) — the domain resolves to a `LoadBalancer` IP that MetalLB advertises from bare metal, with no cloud provider.
-2. **NGINX Ingress + TLS** (Ch 7) — terminates HTTPS with a cert-manager certificate and routes `/api` by host/path rule.
-3. **NetworkPolicy check** (Ch 21) — Cilium's eBPF datapath confirms the ingress is *allowed* to reach the gateway; every other path is denied by default.
+2. **Gateway API + TLS** (Ch 7) — the Cilium Gateway terminates HTTPS with a cert-manager certificate and routes `/api` by an HTTPRoute host/path rule.
+3. **NetworkPolicy check** (Ch 21) — Cilium's eBPF datapath confirms the traffic is *allowed* to reach the gateway; every other path is denied by default.
 4. **gateway pod** (Ch 11, 12) — a Deployment behind a ClusterIP Service, running as a **non-root, restricted** pod (Ch 20) under a **least-privilege ServiceAccount** (Ch 19).
 5. **orders pod** (Ch 12, 16) — reached by DNS service discovery; **HPA** has scaled it out for the on-sale surge, load-balanced by Cilium eBPF (Ch 6).
 6. **payments pod** (Ch 17) — a **PriorityClass**-critical service that survives node pressure and preempts batch work.
@@ -43,7 +43,7 @@ Trace a single `POST /api/orders` from tap to confirmation:
 ### 29.3 Nuances, Gotchas & Architect Considerations
 
 !!! tip "Nuances — subtle behaviours to internalise"
-    - **The request journey is not a straight line**: in the full sequence (User → CDN → Ingress → Gateway → Orders → Inventory → Payments → Kafka → Notifications), each hop involves DNS resolution, TLS handshake (potentially), TCP connection establishment, and application processing. Instruments show the TOTAL latency but each component in the chain can introduce jitter independently — distributed tracing (Tempo) is required to identify where p99 latency spikes originate.
+    - **The request journey is not a straight line**: in the full sequence (User → CDN → Gateway → API Gateway svc → Orders → Inventory → Payments → Kafka → Notifications), each hop involves DNS resolution, TLS handshake (potentially), TCP connection establishment, and application processing. Instruments show the TOTAL latency but each component in the chain can introduce jitter independently — distributed tracing (Tempo) is required to identify where p99 latency spikes originate.
     - **Kubernetes' asynchronous reconciliation means eventual consistency everywhere**: when you `kubectl apply` a Deployment change, the API server accepts it immediately, but the scheduler, kubelet, and container runtime each have their own reconcile cycle. The time from `apply` to all pods serving the new version can be 10-120 seconds depending on image pull time and readiness probe duration.
     - **The security model is defense in depth, not a single perimeter**: each layer (TLS, NetworkPolicy, RBAC, PSA, Kyverno, Falco) independently limits blast radius. An attacker who bypasses one layer still faces the others. The weakest link in the TicketHub security model is the shared `tickethub` namespace — services share namespace scope even though they have individual RBAC and NetworkPolicy.
 

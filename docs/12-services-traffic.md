@@ -1,4 +1,4 @@
-## <a name="ch12"></a>12. Services & Traffic — ClusterIP, Headless & Ingress Routing
+## <a name="ch12"></a>12. Services & Traffic — ClusterIP, Headless & Gateway Routing
 
 Pods are **ephemeral** — they get new IPs on every restart. If the Orders service called Payments by pod IP, it would break constantly. A **Service** solves this: a stable name and virtual IP in front of a changing set of pods. This chapter covers how traffic actually flows through TicketHub, east-west and north-south.
 
@@ -23,7 +23,7 @@ A Service has a **selector** (`app: orders`). Kubernetes continuously maintains 
 | **ClusterIP** (default) | Inside cluster only | All 9 services talk to each other |
 | **Headless** (`clusterIP: None`) | Direct per-pod DNS | StatefulSets (Postgres, Kafka) |
 | **NodePort** | `nodeIP:30000–32767` | Rarely direct; building block |
-| **LoadBalancer** | External IP (MetalLB) | The Ingress controller only |
+| **LoadBalancer** | External IP (MetalLB) | The Gateway's Service only |
 
 The standard TicketHub Service is a plain **ClusterIP**:
 
@@ -62,12 +62,12 @@ spec:
 
 ### 12.4 The full request path
 
-Put it together: north-south enters through the Ingress; east-west hops are service-to-service by DNS name — **never** a raw pod IP.
+Put it together: north-south enters through the Gateway; east-west hops are service-to-service by DNS name — **never** a raw pod IP.
 
 ![Request path](assets/diagrams/12-request-path.png)
 
-1. User hits `https://tickethub.example.com/api/orders` → MetalLB IP → **NGINX Ingress**.
-2. Ingress routes `/api` → **`gateway`** ClusterIP → a gateway pod.
+1. User hits `https://tickethub.example.com/api/orders` → MetalLB IP → **Gateway**.
+2. The Gateway's HTTPRoute matches `/api` → **`gateway`** ClusterIP → a gateway pod.
 3. Gateway calls **`orders`** ClusterIP → an orders pod.
 4. Orders queries **`postgres-0.postgres.data`** (headless) → the primary.
 
@@ -116,7 +116,7 @@ The **Ingress** object (Chapter 7) declares host/path routing + TLS for north-so
 
 !!! tip "Nuances — subtle behaviours to internalise"
     - **kube-dns (CoreDNS) search domains** mean `postgres` inside a pod resolves to `postgres.<current-namespace>.svc.cluster.local`. If a pod in `tickethub` ns calls `postgres.data` (intending `postgres.data.svc.cluster.local`), it first tries `postgres.data.tickethub.svc.cluster.local` — which fails — before trying the correct form. Always use fully qualified names for cross-namespace DNS to avoid ndots resolution latency.
-    - **Session affinity (`sessionAffinity: ClientIP`) is hash-based, not sticky-session aware**: all connections from the same client IP hit the same pod, but a pod restart breaks affinity. If you need application-level stickiness (shopping cart, websocket), use an Ingress `nginx.ingress.kubernetes.io/affinity: cookie` annotation, not the Service affinity.
+    - **Session affinity (`sessionAffinity: ClientIP`) is hash-based, not sticky-session aware**: all connections from the same client IP hit the same pod, but a pod restart breaks affinity. If you need application-level stickiness (shopping cart, websocket), express it as a cookie-based `HTTPRoute` filter in your Gateway implementation (or a service mesh policy), not the Service affinity.
     - **`ExternalTrafficPolicy: Local`** on a LoadBalancer Service preserves the original client IP (no SNAT) but means only nodes with a backend pod accept traffic — nodes without a pod will drop the connection. With 3 pods spread across 9 nodes, 6 out of 9 nodes will silently drop ingress traffic for that Service.
 
 !!! warning "Gotchas — traps that catch experienced engineers"

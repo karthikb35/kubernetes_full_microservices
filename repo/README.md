@@ -23,7 +23,7 @@ repo/
 │   └── search/
 └── manifests/
     ├── 00-namespaces/   # namespaces, ResourceQuota, LimitRange              [Ch 9]
-    ├── 10-platform/     # MetalLB, NGINX Ingress, Rook-Ceph, StorageClasses  [Ch 6-8]
+    ├── 10-platform/     # MetalLB, Cilium Gateway API, Rook-Ceph, StorageClasses  [Ch 6-8]
     ├── 20-data/         # Postgres, Redis, Kafka StatefulSets                [Ch 11,14]
     ├── 30-workloads/    # Deployments + Services for the 9 services          [Ch 11-12]
     ├── 40-config/       # ConfigMaps + Secrets                               [Ch 13]

@@ -12,7 +12,7 @@ A **namespace** is a virtual cluster inside the cluster. It's the boundary for *
 |-----------|----------|--------------|
 | `tickethub` | The 9 application services | The product; app-team RBAC |
 | `data` | Postgres, Redis, Kafka | Stateful; stricter policy, data-team RBAC |
-| `platform` | Ingress, MetalLB, cert-manager | Shared infra; platform-team only |
+| `platform` | Gateway API, MetalLB, cert-manager | Shared infra; platform-team only |
 | `rook-ceph` | Storage operator + Ceph | Isolated blast radius |
 | `monitoring` | Prometheus, Grafana, Loki | Cross-cutting; read access clusterwide |
 | `security` | Falco, Kyverno | Enforcement plane, tightly locked |
@@ -101,7 +101,7 @@ Platform components have a strict dependency order. Installing them out of order
 | 1 | Cluster (kubeadm) | — | The foundation |
 | 2 | **CNI (Cilium)** | 1 | **Nothing schedules** without pod networking |
 | 3 | Storage (Rook-Ceph) + SCs | 2 | Stateful things need PVs |
-| 4 | LB + Ingress (MetalLB, NGINX) | 2 | External access |
+| 4 | LB + Gateway (MetalLB, Cilium GW API) | 2 | External access |
 | 5 | Platform (cert-manager, ESO) | 3,4 | TLS, secrets |
 | 6 | Security/policy (PSA, Kyverno, Falco) | 1 | Enforce **before** apps land |
 | 7 | Observability | 3 | Persist metrics/logs |

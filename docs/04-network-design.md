@@ -42,13 +42,13 @@ A Kubernetes cluster juggles **four distinct address spaces**. Confusing them is
 
 ### 4.3 North-South traffic — getting users *into* the cluster
 
-**North-South** is traffic crossing the cluster boundary — a user's browser reaching TicketHub. On bare metal this is the part the cloud normally does for you, so we assemble it from **MetalLB + Ingress**:
+**North-South** is traffic crossing the cluster boundary — a user's browser reaching TicketHub. On bare metal this is the part the cloud normally does for you, so we assemble it from **MetalLB + the Gateway API**:
 
 ![North-South traffic path](assets/diagrams/04-north-south.png)
 
 1. **DNS** points `tickethub.com` at a MetalLB external IP (from the `10.20.0.0/24` pool).
 2. **MetalLB** makes `Service type=LoadBalancer` actually work on bare metal by announcing that IP via **L2 (ARP)** or **BGP** to your router.
-3. **NGINX Ingress** receives the traffic and does host/path routing (`/api → gateway`, `/ → frontend`), TLS termination, etc.
+3. The **Gateway** (Cilium's Gateway API implementation) receives the traffic and does host/path routing (`/api → gateway`, `/ → frontend`), TLS termination, etc.
 4. It forwards to the target **Service (ClusterIP)**, which lands on a healthy **Pod**.
 
 !!! note "L2/ARP vs BGP, briefly"
@@ -60,9 +60,9 @@ A Kubernetes cluster juggles **four distinct address spaces**. Confusing them is
 
 !!! mental "Mental model — airport arrivals"
     North-South is the **arrivals hall** of an airport. **MetalLB** is the runway that
-    lets planes land at all (a public gate/IP). **Ingress** is passport control and
+    lets planes land at all (a public gate/IP). The **Gateway** is passport control and
     the signage that routes each traveler to the right terminal (service). Without
-    MetalLB, planes have nowhere to land; without Ingress, travelers wander the tarmac.
+    MetalLB, planes have nowhere to land; without the Gateway, travelers wander the tarmac.
 
 ### 4.4 East-West traffic — pods talking to each other
 
@@ -137,7 +137,7 @@ Inside the cluster, **CoreDNS** resolves service names. Every Service gets a sta
 !!! success "Chapter 4 checklist — the network blueprint"
     - A written **IP plan**: node, MetalLB, Pod, and Service ranges that **don't overlap**.
     - **VLAN separation** of management vs application traffic.
-    - **North-South** path designed: DNS → MetalLB → NGINX Ingress → Service → Pod.
+    - **North-South** path designed: DNS → MetalLB → Cilium Gateway (Gateway API) → Service → Pod.
     - **East-West** path understood: Pod IP + Service DNS, routed by **Cilium eBPF**.
     - **CoreDNS** naming convention known by every service.
 

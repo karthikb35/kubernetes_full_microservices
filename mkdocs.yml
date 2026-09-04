@@ -94,7 +94,7 @@ nav:
   - "Part II — Cluster Installation":
     - "5. kubeadm Install (HA)": 05-kubeadm-install.md
     - "6. Cilium CNI + Hubble": 06-cilium-cni.md
-    - "7. MetalLB + NGINX Ingress": 07-metallb-ingress.md
+    - "7. MetalLB + Gateway API": 07-metallb-ingress.md
     - "7A. Certificate & PKI": 07b-certificates.md
     - "8. Rook-Ceph Storage": 08-storage-rook-ceph.md
     - "9. Namespaces & Resources": 09-namespaces-resources.md

@@ -1,12 +1,17 @@
 # TicketHub — cert-manager ClusterIssuers (Ch 7).
 #
 # cert-manager (installed via Helm into the platform namespace) watches for the
-# `cert-manager.io/cluster-issuer` annotation on Ingresses, obtains a Let's
-# Encrypt certificate over ACME, stores it in the Ingress's tls secretName, and
+# `cert-manager.io/cluster-issuer` annotation on the Gateway, obtains a Let's
+# Encrypt certificate over ACME, stores it in the listener's tls secretName, and
 # renews it automatically ~30 days before the 90-day expiry.
 #
+# HTTP-01 is solved via the Gateway API `gatewayHTTPRoute` solver: cert-manager
+# creates a temporary HTTPRoute on the Gateway's :80 listener to serve the ACME
+# challenge token. This needs cert-manager's ExperimentalGatewayAPISupport (GA in
+# recent releases) enabled at install time.
+#
 # Two issuers: validate against STAGING first (generous rate limits, untrusted
-# certs), then switch the Ingress annotation to `letsencrypt` (production).
+# certs), then switch the Gateway annotation to `letsencrypt` (production).
 ---
 apiVersion: cert-manager.io/v1
 kind: ClusterIssuer
@@ -20,13 +25,17 @@ spec:
       name: letsencrypt-staging-account-key
     solvers:
       - http01:
-          ingress:
-            ingressClassName: nginx
+          gatewayHTTPRoute:
+            parentRefs:
+              - name: tickethub
+                namespace: tickethub
+                kind: Gateway
+                group: gateway.networking.k8s.io
 ---
 apiVersion: cert-manager.io/v1
 kind: ClusterIssuer
 metadata:
-  name: letsencrypt                 # referenced by ingress-tickethub.yaml
+  name: letsencrypt                 # referenced by gateway-tickethub.yaml
 spec:
   acme:
     server: https://acme-v02.api.letsencrypt.org/directory
@@ -34,8 +43,13 @@ spec:
     privateKeySecretRef:
       name: letsencrypt-account-key
     solvers:
-      # HTTP-01: cert-manager serves the challenge token through the NGINX
-      # Ingress. Use DNS-01 instead for wildcard certs (*.tickethub.com).
+      # HTTP-01: cert-manager serves the challenge token through a temporary
+      # HTTPRoute on the Gateway's :80 listener. Use DNS-01 instead for wildcard
+      # certs (*.tickethub.com).
       - http01:
-          ingress:
-            ingressClassName: nginx
+          gatewayHTTPRoute:
+            parentRefs:
+              - name: tickethub
+                namespace: tickethub
+                kind: Gateway
+                group: gateway.networking.k8s.io

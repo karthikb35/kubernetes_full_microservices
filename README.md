@@ -31,7 +31,7 @@ python build_pdf.py          # produces k8s-architecture.pdf
 ### Reading order
 
 1. **Part I — Design** (Ch 1–4): scenario, bare metal → VMs, topology, networking
-2. **Part II — Install & Platform** (Ch 5–8): kubeadm, Cilium, MetalLB/Ingress, storage
+2. **Part II — Install & Platform** (Ch 5–8): kubeadm, Cilium, MetalLB/Gateway API, storage
 3. **Part III — Workloads** (Ch 9–18): namespaces, containerizing, controllers, services, config, scaling, scheduling, health
 4. **Part IV — Security** (Ch 19–24): RBAC, Pod Security, NetworkPolicy, Kyverno, Falco, supply chain
 5. **Part V — Operate** (Ch 25–29): CRDs, observability, backup/DR, GitOps, recap

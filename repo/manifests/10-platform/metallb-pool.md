@@ -1,6 +1,6 @@
 # metallb-pool.yaml — bare-metal LoadBalancer IPs
 
-> **Folder:** `10-platform` · **Chapter:** [Ch 7 — MetalLB & Ingress](../../../docs/07-metallb-ingress.md)
+> **Folder:** `10-platform` · **Chapter:** [Ch 7 — MetalLB & Gateway API](../../../docs/07-metallb-ingress.md)
 
 On bare metal there is no cloud load balancer, so MetalLB hands out external IPs
 to `type: LoadBalancer` Services from a reserved pool and advertises them on the
@@ -25,11 +25,11 @@ LAN.
 ![metallb pool](../../../assets/diagrams/mf-10-metallb-pool.png)
 
 **Interacts with**
-- [`ingress-tickethub.yaml`](ingress-tickethub.yaml) — the ingress controller's Service draws its external IP from this pool.
+- [`gateway-tickethub.yaml`](gateway-tickethub.yaml) — the Gateway's LoadBalancer Service draws its external IP from this pool.
 - [`quota-limits.yaml`](../00-namespaces/quota-limits.yaml) — caps `tickethub` to 2 LoadBalancers.
 
 ## Concept
 
 ![metallb architecture](../../../assets/diagrams/07-metallb-arch.png)
 
-See [Ch 7 — MetalLB & Ingress](../../../docs/07-metallb-ingress.md) for the full walkthrough.
+See [Ch 7 — MetalLB & Gateway API](../../../docs/07-metallb-ingress.md) for the full walkthrough.

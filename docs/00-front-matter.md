@@ -14,7 +14,7 @@
 | Kubernetes install | `kubeadm` (vanilla upstream), HA control plane |
 | CNI | **Cilium** (eBPF) + **Hubble** observability |
 | Load balancer | **MetalLB** (bare-metal `LoadBalancer` services) |
-| Ingress | **NGINX Ingress Controller** |
+| Edge routing | **Kubernetes Gateway API** (Cilium implementation) |
 | Storage | **Rook-Ceph** (block, file, S3 object) |
 | Policy / security | Pod Security Admission, **Kyverno**, **Falco**, RBAC, NetworkPolicy |
 | Autoscaling | Metrics Server, **HPA**, **VPA**, Cluster Autoscaler, **KEDA** |
@@ -37,7 +37,7 @@
 ### Part II — Cluster Installation & Core Platform
 5. [Installing Kubernetes with kubeadm (HA control plane)](05-kubeadm-install.md)
 6. [The CNI: Cilium (eBPF) + Hubble](06-cilium-cni.md)
-7. [Load Balancing & Ingress: MetalLB + NGINX](07-metallb-ingress.md)
+7. [Load Balancing & Gateway API: MetalLB + Cilium](07-metallb-ingress.md)
 7A. [Certificate & PKI Management — cluster PKI + application mTLS](07b-certificates.md)
 8. [Storage: Rook-Ceph, StorageClasses, dynamic PV/PVC](08-storage-rook-ceph.md)
 9. [Namespaces, the Resource Model & Bootstrap Ordering](09-namespaces-resources.md)
