@@ -101,9 +101,9 @@ Locally, you override them to point at whatever port your services are running o
     Hard-coding pod IPs, or even ClusterIPs, is an anti-pattern — names are stable across
     restarts, rescheduling, and cluster rebuilds; IPs are not.
 
-### 12.5 Ingress vs. Gateway API
+### 12.5 Gateway API for north-south routing
 
-The **Ingress** object (Chapter 7) declares host/path routing + TLS for north-south HTTP. The newer **Gateway API** (`Gateway` + `HTTPRoute`) is its successor — richer traffic splitting, header routing, and a cleaner separation between infra owners and app owners. TicketHub starts on Ingress and can adopt Gateway API per-service without disruption.
+North-south HTTP (host/path routing + TLS) enters through the **Gateway API** (`Gateway` + `HTTPRoute`, Chapter 7), which TicketHub migrated to from the legacy **Ingress** object. The Gateway (owned by the platform team) declares the listeners, IP, and TLS; each **HTTPRoute** (owned by an app team) declares its paths and backends — a cleaner separation of infra vs app concerns, with richer traffic splitting and header routing than Ingress offered. East-west service-to-service calls never touch it; they use ClusterIP DNS directly (§12.1–12.4).
 
 !!! warning "Readiness probes gate the EndpointSlice"
     A pod is only added to a Service's EndpointSlice once its **readiness probe** passes
@@ -117,7 +117,7 @@ The **Ingress** object (Chapter 7) declares host/path routing + TLS for north-so
 !!! tip "Nuances — subtle behaviours to internalise"
     - **kube-dns (CoreDNS) search domains** mean `postgres` inside a pod resolves to `postgres.<current-namespace>.svc.cluster.local`. If a pod in `tickethub` ns calls `postgres.data` (intending `postgres.data.svc.cluster.local`), it first tries `postgres.data.tickethub.svc.cluster.local` — which fails — before trying the correct form. Always use fully qualified names for cross-namespace DNS to avoid ndots resolution latency.
     - **Session affinity (`sessionAffinity: ClientIP`) is hash-based, not sticky-session aware**: all connections from the same client IP hit the same pod, but a pod restart breaks affinity. If you need application-level stickiness (shopping cart, websocket), express it as a cookie-based `HTTPRoute` filter in your Gateway implementation (or a service mesh policy), not the Service affinity.
-    - **`ExternalTrafficPolicy: Local`** on a LoadBalancer Service preserves the original client IP (no SNAT) but means only nodes with a backend pod accept traffic — nodes without a pod will drop the connection. With 3 pods spread across 9 nodes, 6 out of 9 nodes will silently drop ingress traffic for that Service.
+    - **`ExternalTrafficPolicy: Local`** on a LoadBalancer Service preserves the original client IP (no SNAT) but means only nodes with a backend pod accept traffic — nodes without a pod will drop the connection. With 3 pods spread across 9 nodes, 6 out of 9 nodes will silently drop inbound traffic for that Service.
 
 !!! warning "Gotchas — traps that catch experienced engineers"
     - **`ClusterIP: None` makes a Service headless** — it returns A records for individual pod IPs, not a virtual IP. Calling `postgres.data.svc.cluster.local` from the `orders` service returns all 3 pod IPs via DNS. If orders uses a naive HTTP client that doesn't re-resolve DNS on each connection, it may always route to the same pod. Headless Services require the client to implement its own load balancing.
@@ -129,12 +129,12 @@ The **Ingress** object (Chapter 7) declares host/path routing + TLS for north-so
     2. **Service topology aware routing**: Kubernetes EndpointSlice topology hints route traffic preferentially to pods on the same node or zone. For TicketHub, routing Orders → Postgres within the same zone reduces cross-rack latency. Enable topology hints on Services where cross-AZ latency matters.
     3. **East-West load balancing algorithm**: Cilium's eBPF uses maglev consistent hashing for Service load balancing by default — which gives better connection distribution than simple round-robin, especially for long-lived gRPC connections. Verify your connection pool sizes account for this distribution.
     4. **NodePort port range**: the default NodePort range is `30000-32767`. Using NodePorts for production services is not recommended (port memorization burden, firewall complexity), but if needed for legacy integrations, document the port assignments explicitly to prevent conflicts.
-    5. **Service vs Ingress for internal services**: internal services (Orders calling Payments) should use ClusterIP Services directly — they don't need Ingress. Only traffic entering from outside the cluster needs Ingress. Routing internal traffic through Ingress adds unnecessary latency and a single point of failure.
+    5. **Service vs Gateway for internal services**: internal services (Orders calling Payments) should use ClusterIP Services directly — they don't need the Gateway. Only traffic entering from outside the cluster goes through the Gateway. Routing internal traffic through the edge Gateway adds unnecessary latency and a single point of failure.
 
 !!! success "Chapter 12 checklist"
     - Every service exposed as a **ClusterIP**; services call each other by **DNS name**.
     - StatefulSets front a **headless** Service for stable per-pod DNS.
-    - Only the **Ingress controller** is a `LoadBalancer` (via MetalLB).
+    - Only the **Gateway**'s Service is a `LoadBalancer` (via MetalLB).
     - **Readiness probes** defined so only Ready pods receive traffic.
     - No raw pod IPs or ClusterIPs hard-coded anywhere.
 

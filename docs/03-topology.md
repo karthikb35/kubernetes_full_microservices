@@ -76,7 +76,7 @@ backend k8s-cp
 
 ### 3.3 Worker node pools — labels and taints
 
-We don't want a batch Kafka rebalance stealing CPU from the Ingress controller, or a stateless UI pod landing on a precious NVMe data node. **Node pools** solve this using two primitives:
+We don't want a batch Kafka rebalance stealing CPU from the edge Gateway, or a stateless UI pod landing on a precious NVMe data node. **Node pools** solve this using two primitives:
 
 ![Node pools](assets/diagrams/03-node-pools.png)
 

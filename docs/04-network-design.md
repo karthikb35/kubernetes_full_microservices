@@ -30,7 +30,7 @@ A Kubernetes cluster juggles **four distinct address spaces**. Confusing them is
 | Data workers | `10.10.0.31–33` | worker-data-1..3 |
 | Infra workers | `10.10.0.41–42` | worker-infra-1..2 |
 | API VIP (keepalived) | `10.10.0.10` | HAProxy front |
-| MetalLB address pool | `10.20.0.100–200` | Ingress + any LB services |
+| MetalLB address pool | `10.20.0.100–200` | Gateway + any LB services |
 | Pod CIDR | `10.244.0.0/16` | `kubeadm --pod-network-cidr` |
 | Service CIDR | `10.96.0.0/12` | `kubeadm --service-cidr` (default) |
 
@@ -110,7 +110,7 @@ Inside the cluster, **CoreDNS** resolves service names. Every Service gets a sta
       (failover, not load-share). Use **BGP mode** with a capable router for true
       multi-node load distribution.
     - **`hostNetwork` pods** bypass the Pod CIDR and grab node ports directly — use
-      sparingly (e.g., the ingress controller) and track those ports.
+      sparingly (e.g., the edge Gateway data plane) and track those ports.
     - Keep the **MetalLB pool** comfortably larger than your expected number of
       `LoadBalancer` services so you never run out of external IPs.
 

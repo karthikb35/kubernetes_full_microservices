@@ -4,7 +4,7 @@ output filename (no extension). Rendered to assets/diagrams/<key>.png.
 
 A shared THEME + reusable classDef palette keeps every diagram visually
 consistent and color-coded:
-  users/clients -> blue     edge/ingress -> orange
+  users/clients -> blue     edge/gateway -> orange
   services      -> green    data stores  -> red
   platform/infra-> purple   async/events -> teal
 """
@@ -582,7 +582,7 @@ flowchart TB
   subgraph CLUSTER["Cluster namespaces"]
     NS1["tickethub<br/>(9 app services)"]:::svc
     NS2["data<br/>(Postgres, Redis, Kafka)"]:::data
-    NS3["platform<br/>(ingress, metallb, cert-manager)"]:::edge
+    NS3["platform<br/>(Gateway API, metallb, cert-manager)"]:::edge
     NS4["rook-ceph<br/>(storage)"]:::data
     NS5["monitoring<br/>(Prometheus, Grafana, Loki)"]:::plat
     NS6["security<br/>(Falco, Kyverno)"]:::plat
@@ -741,9 +741,9 @@ flowchart TB
     N1["node IP : 30000-32767<br/>rarely used directly"]:::edge
   end
   subgraph LB["LoadBalancer (via MetalLB)"]
-    L1["external IP from pool<br/>ingress controller"]:::edge
+    L1["external IP from pool<br/>Gateway entrypoint"]:::edge
   end
-  NOTE["ClusterIP for east-west, Headless for stable per-pod DNS,<br/>LoadBalancer (MetalLB) for the ingress entrypoint."]
+  NOTE["ClusterIP for east-west, Headless for stable per-pod DNS,<br/>LoadBalancer (MetalLB) for the Gateway entrypoint."]
 """ + PALETTE
 
 DIAGRAMS["12-service-endpoints"] = T + """
@@ -1326,7 +1326,7 @@ flowchart TB
   ROOT["app-of-apps<br/>(root Application)"]:::edge
   ROOT --> W2["wave 2: Cilium CNI"]:::svc
   ROOT --> W3["wave 3: Rook-Ceph + SCs"]:::data
-  ROOT --> W4["wave 4: MetalLB + Ingress"]:::plat
+  ROOT --> W4["wave 4: MetalLB + Gateway API"]:::plat
   ROOT --> W6["wave 6: security (Kyverno, Falco)"]:::plat
   ROOT --> W8["wave 8: data (Postgres, Kafka)"]:::data
   ROOT --> W9["wave 9: TicketHub apps"]:::svc

@@ -67,7 +67,7 @@ kubectl apply -f manifests/70-observability/
 
 | Part | Content | State |
 |------|---------|-------|
-| II | Namespaces, quotas, MetalLB, StorageClasses, Ceph, Ingress | ✅ included |
+| II | Namespaces, quotas, MetalLB, StorageClasses, Ceph, Gateway API | ✅ included |
 | III | Service Dockerfiles + workloads (Deployments, StatefulSets, Services, config) | ✅ included |
 | IV | Autoscaling (HPA/VPA/KEDA), PDB, PriorityClasses | ✅ included |
 | V | RBAC, NetworkPolicy, Kyverno, Falco | ✅ included |

@@ -45,7 +45,7 @@
 ### Part III — Building & Deploying the Services
 10. [Containerizing the Services — Dockerfiles (multi-stage, distroless, non-root)](10-containerizing.md)
 11. [Workload Controllers — Deployments, ReplicaSets, StatefulSets, DaemonSets](11-workload-controllers.md)
-12. [Services & Traffic — ClusterIP, headless, Ingress routing](12-services-traffic.md)
+12. [Services & Traffic — ClusterIP, headless, Gateway routing](12-services-traffic.md)
 13. [Configuration & Secrets — ConfigMaps, Secrets, External Secrets](13-config-secrets.md)
 14. [Stateful Storage — PV/PVC, StatefulSet volumeClaimTemplates + DB Replication CRDs](14-stateful-storage.md)
 
