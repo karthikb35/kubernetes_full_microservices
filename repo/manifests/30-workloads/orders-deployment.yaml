@@ -20,7 +20,7 @@ spec:
     spec:
       containers:
         - name: orders
-          image: registry.internal/tickethub/orders:v1
+          image: ghcr.io/karthikb35/tickethub-orders@sha256:828ad8c7a83ef167784f97db6b302002814c32066e4a0af77a23ec64bc4aa6c9
           ports:
             - { name: http, containerPort: 8080 }
             - { name: metrics, containerPort: 9090 }
