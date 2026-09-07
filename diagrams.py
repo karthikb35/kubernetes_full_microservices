@@ -599,6 +599,45 @@ flowchart LR
   NOTE["Both deliver the identical platform capabilities. DIY = best-of-breed parts<br/>you integrate and own; OpenShift = one supported installer that pins and<br/>upgrades the whole stack. TicketHub's chart and Argo CD apps run on both."]
 """ + PALETTE
 
+DIAGRAMS["08b-agent-install-flow"] = T + """
+flowchart LR
+  CFG["install-config.yaml<br/>+ agent-config.yaml"]:::edge
+  CREATE["openshift-install<br/>agent create image"]:::plat
+  ISO["agent.iso<br/>USB / PXE / virtual media"]:::svc
+  BOOT["boot all nodes<br/>from the ISO"]:::edge
+  RDV["rendezvous node<br/>bootstraps etcd"]:::plat
+  AUTO["comes up automatically:<br/>control plane - OVN CNI -<br/>registry - monitoring"]:::svc
+  WAIT["wait-for<br/>install-complete"]:::plat
+  DONE["console URL +<br/>kubeadmin"]:::data
+  CFG --> CREATE --> ISO --> BOOT --> RDV --> AUTO --> WAIT --> DONE
+  NOTE["Two config files and one ISO replace the entire Ch 5 kubeadm sequence.<br/>The CNI, registry and monitoring install themselves as part of bring-up."]
+""" + PALETTE
+
+DIAGRAMS["08b-scc-vs-psa"] = T + """
+flowchart TB
+  POD["Same hardened Pod<br/>runAsNonRoot - drop ALL caps -<br/>seccomp RuntimeDefault - read-only rootfs"]:::svc
+  POD --> PSA["DIY: PSA label on namespace<br/>enforce = restricted"]:::plat
+  POD --> SCC["OpenShift: SCC restricted-v2<br/>assigns a random high UID"]:::plat
+  PSA --> A1["ADMITTED"]:::edge
+  SCC --> A2["ADMITTED<br/>(runs as random UID)"]:::edge
+  NOTE["The pod hardcodes no UID, so it passes BOTH admission models unchanged.<br/>A fixed runAsUser: 1000 would be rejected by SCC - prefer runAsNonRoot."]
+""" + PALETTE
+
+DIAGRAMS["08b-tickethub-on-ocp"] = T + """
+flowchart LR
+  GIT["OpenShift GitOps<br/>(Argo CD) renders<br/>the Helm chart"]:::plat
+  PROJ["Project: tickethub<br/>Deployments + Services"]:::svc
+  GIT -->|"sync"| PROJ
+  U["User<br/>tickethub.example.com"]:::user
+  RT["Route<br/>HAProxy Router, TLS edge"]:::edge
+  GW["gateway Service"]:::svc
+  SVC["orders / catalog / ...<br/>9 services"]:::svc
+  ODF[("OpenShift Data Foundation<br/>Ceph PVCs")]:::data
+  U --> RT --> GW --> SVC --> ODF
+  PROJ -.->|"creates"| GW
+  NOTE["Same Helm chart and Argo CD app-of-apps as the DIY stack. Only the edge<br/>object (Route instead of Gateway API) and the StorageClass (ODF) differ."]
+""" + PALETTE
+
 
 
 DIAGRAMS["09-namespaces"] = T + """
