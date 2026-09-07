@@ -573,9 +573,33 @@ flowchart LR
   NOTE["One Ceph cluster serves all three storage APIs.<br/>Pick per workload: RWO block for DBs, RWX file for sharing,<br/>S3 object for blobs and backups."]
 """ + PALETTE
 
-# ===========================================================================
-# CHAPTER 9 — Namespaces, resource model, bootstrap order
-# ===========================================================================
+DIAGRAMS["08b-openshift-stack"] = T + """
+flowchart LR
+  subgraph DIY["DIY stack (Ch 5-8) - you assemble"]
+    direction TB
+    D1["kubeadm HA control plane"]:::plat
+    D2["containerd runtime"]:::plat
+    D3["Cilium eBPF CNI + Hubble"]:::edge
+    D4["MetalLB + Cilium Gateway API"]:::edge
+    D5["cert-manager PKI"]:::svc
+    D6["Rook-Ceph storage"]:::data
+    D1 --> D2 --> D3 --> D4 --> D5 --> D6
+  end
+  subgraph OCP["OpenShift - one installer bundles it"]
+    direction TB
+    O1["openshift-install (Agent-based)"]:::plat
+    O2["CRI-O runtime"]:::plat
+    O3["OVN-Kubernetes CNI"]:::edge
+    O4["MetalLB Operator + Router / Routes"]:::edge
+    O5["cert-manager Operator + serving certs"]:::svc
+    O6["OpenShift Data Foundation (Ceph)"]:::data
+    O1 --> O2 --> O3 --> O4 --> O5 --> O6
+  end
+  DIY -->|"same workloads: Helm chart + Argo CD + PSA/SCC"| OCP
+  NOTE["Both deliver the identical platform capabilities. DIY = best-of-breed parts<br/>you integrate and own; OpenShift = one supported installer that pins and<br/>upgrades the whole stack. TicketHub's chart and Argo CD apps run on both."]
+""" + PALETTE
+
+
 
 DIAGRAMS["09-namespaces"] = T + """
 flowchart TB
