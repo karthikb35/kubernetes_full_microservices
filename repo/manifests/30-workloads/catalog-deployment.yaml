@@ -23,7 +23,7 @@ spec:
         seccompProfile: { type: RuntimeDefault }
       containers:
         - name: catalog
-          image: registry.internal/tickethub/catalog:v1
+          image: ghcr.io/karthikb35/tickethub-catalog@sha256:a430d92ab843ab513634bcc2abb35a3de98ca114848b2c3850e48b6972ff2f7c
           ports: [{ containerPort: 8080 }]
           envFrom:
             - configMapRef: { name: catalog-config }
