@@ -238,7 +238,8 @@ jobs:
       && needs.detect.outputs.services != '[]'
     runs-on: ubuntu-latest
     permissions:
-      contents: write        # push the promotion commit back to main
+      contents: write          # push the promotion branch
+      pull-requests: write     # open the promotion PR (main requires PRs)
     concurrency:
       group: promote-${{ github.ref }}
       cancel-in-progress: false
@@ -282,20 +283,23 @@ jobs:
           done
           echo "changed=$changed" >> "$GITHUB_OUTPUT"
 
-      - name: Commit and push promotion
+      - name: Open promotion pull request
+        # main is protected (changes must go through a PR), so open a PR that pins
+        # the signed digests. GITHUB_TOKEN-created PRs don't retrigger CI, so no loop.
         if: steps.promote.outputs.changed == '1'
-        run: |
-          git config user.name  "tickethub-ci[bot]"
-          git config user.email "tickethub-ci[bot]@users.noreply.github.com"
-          git add repo/manifests/30-workloads/*.yaml
-          # '[skip ci]' stops this manifest-only commit from triggering another run.
-          git commit -m "deploy: promote signed images for ${{ github.sha }} [skip ci]"
-          for attempt in 1 2 3; do
-            if git push origin HEAD:main; then exit 0; fi
-            echo "push rejected (attempt $attempt) — rebasing on main and retrying..."
-            git pull --rebase origin main
-          done
-          echo "::error::failed to push promotion commit after retries"; exit 1
+        uses: peter-evans/create-pull-request@v6
+        with:
+          add-paths: repo/manifests/30-workloads/*.yaml
+          branch: promote/${{ github.sha }}
+          base: main
+          delete-branch: true
+          commit-message: "deploy: promote signed images for ${{ github.sha }}"
+          title: "deploy: promote signed images for ${{ github.sha }}"
+          body: |
+            Automated GitOps promotion.
+
+            Pins the changed service Deployments to the image digests built and
+            signed from commit ${{ github.sha }}. Merge to let Argo CD roll them out.
 
   cleanup-images:
     name: Prune old GHCR versions
