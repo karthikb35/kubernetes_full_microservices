@@ -33,7 +33,7 @@ migrate:
 
 services:
   gateway:
-    image: registry.internal/tickethub/gateway:v1
+    image: ghcr.io/karthikb35/tickethub-gateway@sha256:57537b54399cbc05c828eea42188bccd7c16efa7480ef9698fc26cefa40de207
     servicePort: 8080
     configMap: gateway-config
     hpa: { enabled: true, minReplicas: 3, maxReplicas: 20, targetCPU: 70 }
@@ -44,7 +44,7 @@ services:
         - { toApps: [orders, catalog], ports: [8080] }
 
   frontend:
-    image: registry.internal/tickethub/frontend:v1
+    image: ghcr.io/karthikb35/tickethub-frontend@sha256:739972486250ada3aaf5313d80fe0f958f7807ac0ead075af36d4dcbb96258f3
     servicePort: 80
     readinessPath: /
     livenessPath: /
@@ -58,7 +58,7 @@ services:
         - { fromAny: true, ports: [8080] }
 
   orders:
-    image: ghcr.io/karthikb35/tickethub-orders@sha256:828ad8c7a83ef167784f97db6b302002814c32066e4a0af77a23ec64bc4aa6c9
+    image: ghcr.io/karthikb35/tickethub-orders@sha256:f4288bd8c2bdf3b0c630d5cdc9905d37a4c613e7936c039268538086099fcb9a
     servicePort: 80
     configMap: orders-config
     metricsPort: 9090
@@ -77,7 +77,7 @@ services:
         - { toNamespace: data, toApp: postgres, ports: [5432] }
 
   catalog:
-    image: ghcr.io/karthikb35/tickethub-catalog@sha256:a430d92ab843ab513634bcc2abb35a3de98ca114848b2c3850e48b6972ff2f7c
+    image: ghcr.io/karthikb35/tickethub-catalog@sha256:37ed7ba092a6531d46d1e6fde43599b097d1e6e12e6953deb83965dbf552b70a
     servicePort: 80
     configMap: catalog-config
     hpa: { enabled: true, minReplicas: 3, maxReplicas: 20, targetCPU: 70 }
@@ -88,7 +88,7 @@ services:
         - { toApps: [search], ports: [8080] }
 
   users:
-    image: registry.internal/tickethub/users:v1
+    image: ghcr.io/karthikb35/tickethub-users@sha256:a772123d9ea7ea44d07b3b215d03af954a6e8dff45978c32ae1e0258f1037e63
     servicePort: 80
     configMap: users-config
     hpa: { enabled: true, minReplicas: 3, maxReplicas: 15, targetCPU: 70 }
@@ -97,7 +97,7 @@ services:
         - { fromApps: [gateway], ports: [8080] }
 
   inventory:
-    image: registry.internal/tickethub/inventory:v1
+    image: ghcr.io/karthikb35/tickethub-inventory@sha256:e878f1c8554274a2b74a0f1fb1786bfa6006b400dc1d20cc9dd66261c810b617
     servicePort: 80
     configMap: inventory-config
     hpa: { enabled: true, minReplicas: 3, maxReplicas: 15, targetCPU: 70 }
@@ -106,7 +106,7 @@ services:
         - { fromApps: [gateway, orders], ports: [8080] }
 
   payments:
-    image: registry.internal/tickethub/payments:v1
+    image: ghcr.io/karthikb35/tickethub-payments@sha256:68161055e0a9465d3f5f066e365197de595d6e07395b13e6ff9afc02f7885416
     servicePort: 80
     configMap: payments-config
     hpa: { enabled: true, minReplicas: 3, maxReplicas: 15, targetCPU: 70 }
@@ -115,7 +115,7 @@ services:
         - { fromApps: [orders], ports: [8080] }
 
   search:
-    image: registry.internal/tickethub/search:v1
+    image: ghcr.io/karthikb35/tickethub-search@sha256:c0efe7ecc45ffd8e2195a72b06dfb3ca39264e202c059f401c509093942421b5
     servicePort: 80
     replicas: 2
     configMap: search-config
@@ -126,7 +126,7 @@ services:
         - { fromApps: [catalog], ports: [8080] }
 
   notifications:
-    image: registry.internal/tickethub/notifications:v1
+    image: ghcr.io/karthikb35/tickethub-notifications@sha256:8ef7be0fb687b1ac73fdd78c869677b6986c1ea79ed7d2c53a9d16d4d5e30ded
     servicePort: 80
     replicas: 1
     configMap: notifications-config
