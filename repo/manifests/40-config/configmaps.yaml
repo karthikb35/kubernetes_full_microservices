@@ -17,3 +17,54 @@ metadata:
 data:
   LOG_LEVEL: "info"
   SEARCH_URL: "http://search.tickethub.svc.cluster.local"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: gateway-config
+  namespace: tickethub
+data:
+  LOG_LEVEL: "info"
+  ORDERS_URL: "http://orders.tickethub.svc.cluster.local"
+  CATALOG_URL: "http://catalog.tickethub.svc.cluster.local"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: users-config
+  namespace: tickethub
+data:
+  LOG_LEVEL: "info"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: inventory-config
+  namespace: tickethub
+data:
+  LOG_LEVEL: "info"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: payments-config
+  namespace: tickethub
+data:
+  LOG_LEVEL: "info"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: search-config
+  namespace: tickethub
+data:
+  LOG_LEVEL: "info"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: notifications-config
+  namespace: tickethub
+data:
+  LOG_LEVEL: "info"
+  KAFKA_BROKERS: "kafka-0.kafka.data:9092,kafka-1.kafka.data:9092,kafka-2.kafka.data:9092"

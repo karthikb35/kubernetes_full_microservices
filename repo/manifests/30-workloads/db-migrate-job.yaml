@@ -11,10 +11,17 @@ spec:
       labels: { app: orders-migrate }
     spec:
       restartPolicy: Never
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile: { type: RuntimeDefault }
       containers:
         - name: migrate
           image: registry.internal/tickethub/orders-migrate:v1
           command: ["/migrate", "up"]
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: ["ALL"] }
           env:
             - name: DB_PASSWORD
               valueFrom:

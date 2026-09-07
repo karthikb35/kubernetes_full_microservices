@@ -43,7 +43,7 @@ spec:
       match:
         any: [{ resources: { kinds: [Pod] } }]
       verifyImages:
-        - imageReferences: ["registry.internal/tickethub/*"]
+        - imageReferences: ["ghcr.io/karthikb35/tickethub-*"]
           attestors:
             - entries:
                 - keys:

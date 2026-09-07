@@ -1,14 +1,15 @@
-# Catalog service — stateless Deployment with zero-downtime rollout (Ch 11).
+# Notifications — Kafka consumer (orders.*, payments.*); scaled by KEDA on lag
+# (Ch 11-12, 16). Exposes /healthz + /readyz and a status endpoint for scraping.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: catalog
+  name: notifications
   namespace: tickethub
-  labels: { app: catalog }
+  labels: { app: notifications }
 spec:
-  replicas: 3
+  replicas: 1                       # KEDA (Ch 16) scales this on consumer lag
   selector:
-    matchLabels: { app: catalog }
+    matchLabels: { app: notifications }
   strategy:
     type: RollingUpdate
     rollingUpdate:
@@ -16,17 +17,18 @@ spec:
       maxSurge: 1
   template:
     metadata:
-      labels: { app: catalog }
+      labels: { app: notifications }
     spec:
       securityContext:
         runAsNonRoot: true
         seccompProfile: { type: RuntimeDefault }
       containers:
-        - name: catalog
-          image: registry.internal/tickethub/catalog:v1
-          ports: [{ containerPort: 8080 }]
+        - name: notifications
+          image: registry.internal/tickethub/notifications:v1
+          ports:
+            - { name: http, containerPort: 8080 }
           envFrom:
-            - configMapRef: { name: catalog-config }
+            - configMapRef: { name: notifications-config }
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
@@ -46,10 +48,9 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: catalog
+  name: notifications
   namespace: tickethub
 spec:
-  selector: { app: catalog }
+  selector: { app: notifications }
   ports:
-    - port: 80
-      targetPort: 8080
+    - { name: http, port: 80, targetPort: 8080 }

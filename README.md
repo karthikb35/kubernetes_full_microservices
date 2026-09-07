@@ -99,13 +99,17 @@ with Git as the source of truth. See [repo/README.md](repo/README.md) for detail
 
 ## What's illustrative vs. runnable
 
-This is a **teaching reference**, not a production deployment. To keep the focus on
+This is a **teaching reference** you can also run. To keep the focus on
 architecture:
 
 - **Runnable code:** `frontend`, `gateway`, `orders` (build, run, and serve locally).
 - **Illustrative stubs:** `users`, `catalog`, `inventory`, `payments`, `notifications`,
   `search` ship a minimal service (health/readiness + one endpoint) and a Dockerfile
   so the manifests reference real, buildable images — but they are intentionally thin.
+- **Full workload manifests:** all 9 services now have a `Deployment` + `Service` under
+  `repo/manifests/30-workloads/` with restricted Pod Security contexts, probes, HPAs,
+  PodDisruptionBudgets, and per-service NetworkPolicies — so every built image actually
+  runs. CI builds, signs, and promotes each image by digest via a pull request (Chapter 28).
 - **Platform components** (Cilium, MetalLB, Rook-Ceph, Prometheus, etc.) are installed
   via Helm in the book; this repo carries only the custom resources and config.
 
