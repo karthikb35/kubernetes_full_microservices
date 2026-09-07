@@ -18,6 +18,9 @@ spec:
     metadata:
       labels: { app: orders }
     spec:
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile: { type: RuntimeDefault }
       containers:
         - name: orders
           image: registry.internal/tickethub/orders:v1
@@ -26,6 +29,10 @@ spec:
             - { name: metrics, containerPort: 9090 }
           envFrom:
             - configMapRef: { name: orders-config }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: ["ALL"] }
           env:
             - name: DB_PASSWORD
               valueFrom:

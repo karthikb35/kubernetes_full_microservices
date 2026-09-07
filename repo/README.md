@@ -61,14 +61,24 @@ kubectl apply -f manifests/70-observability/
 
 > In production these are delivered by Argo CD (`repo/argocd/`), not applied by
 > hand — Git is the source of truth. The manual order above mirrors the
-> Chapter 9 bootstrap sequence for local testing.
+> Chapter 9 bootstrap sequence for local testing. The root app-of-apps points at
+> `repo/argocd/apps/`, where each manifest layer is its own child Application with
+> a sync wave (Chapter 28).
+
+## Continuous delivery
+
+CI (`.github/workflows/ci.yml`) builds, tests, and **signs** an image per changed
+service, then a `promote` job pins the **signed digest** into the matching
+`manifests/30-workloads/<svc>-deployment.yaml` and opens a pull request. Merging
+the PR is the deploy approval; Argo CD then rolls out the new digest. CI never
+holds cluster credentials (Chapter 28).
 
 ## Status
 
 | Part | Content | State |
 |------|---------|-------|
 | II | Namespaces, quotas, MetalLB, StorageClasses, Ceph, Gateway API | ✅ included |
-| III | Service Dockerfiles + workloads (Deployments, StatefulSets, Services, config) | ✅ included |
+| III | Dockerfiles + workloads for all 9 services (Deployments, StatefulSets, Services, config) | ✅ included |
 | IV | Autoscaling (HPA/VPA/KEDA), PDB, PriorityClasses | ✅ included |
-| V | RBAC, NetworkPolicy, Kyverno, Falco | ✅ included |
-| VI | Prometheus/alerts, Velero backup, Argo CD app-of-apps | ✅ included |
+| V | RBAC, NetworkPolicy (per-service zero-trust), Kyverno, Falco | ✅ included |
+| VI | Prometheus/alerts, Velero backup, Argo CD app-of-apps + CI promotion | ✅ included |

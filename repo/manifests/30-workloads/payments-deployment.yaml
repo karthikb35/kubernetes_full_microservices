@@ -1,14 +1,14 @@
-# Catalog service — stateless Deployment with zero-downtime rollout (Ch 11).
+# Payments — charges orders; called by the orders service (Ch 11-12).
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: catalog
+  name: payments
   namespace: tickethub
-  labels: { app: catalog }
+  labels: { app: payments }
 spec:
   replicas: 3
   selector:
-    matchLabels: { app: catalog }
+    matchLabels: { app: payments }
   strategy:
     type: RollingUpdate
     rollingUpdate:
@@ -16,17 +16,18 @@ spec:
       maxSurge: 1
   template:
     metadata:
-      labels: { app: catalog }
+      labels: { app: payments }
     spec:
       securityContext:
         runAsNonRoot: true
         seccompProfile: { type: RuntimeDefault }
       containers:
-        - name: catalog
-          image: registry.internal/tickethub/catalog:v1
-          ports: [{ containerPort: 8080 }]
+        - name: payments
+          image: registry.internal/tickethub/payments:v1
+          ports:
+            - { name: http, containerPort: 8080 }
           envFrom:
-            - configMapRef: { name: catalog-config }
+            - configMapRef: { name: payments-config }
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
@@ -46,10 +47,9 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: catalog
+  name: payments
   namespace: tickethub
 spec:
-  selector: { app: catalog }
+  selector: { app: payments }
   ports:
-    - port: 80
-      targetPort: 8080
+    - { name: http, port: 80, targetPort: 8080 }

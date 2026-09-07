@@ -94,8 +94,40 @@ strategy:
     the vault holds the value) or Sealed Secrets. Argo CD syncs the reference; the real
     credential never lands in a commit.
 
+### 28.5 Automated image promotion — from signed image to running Pod
 
-### 28.5 Nuances, Gotchas & Architect Considerations
+GitOps says *Git is the desired state*, but something has to **write the new image version into Git**. That is **image promotion**, and it is the bridge between CI (which builds artifacts) and Argo CD (which deploys them).
+
+![CI/CD to GitOps promotion flow](assets/diagrams/28-cicd-promotion-flow.png)
+
+The flow, end to end:
+
+1. **CI builds and signs** — on a push to `main`, GitHub Actions detects which services changed, builds and tests them, builds a container image tagged by commit SHA, pushes it to GHCR, and **signs it by digest** with Cosign. CI holds **no cluster credentials**.
+2. **Promotion writes back to Git** — a `promote` job rewrites the `image:` field of each changed service's `repo/manifests/30-workloads/<svc>-deployment.yaml` to the **signed digest** (`ghcr.io/<org>/tickethub-<svc>@sha256:…`), then opens a **pull request**:
+
+    ```yaml
+    # before
+    image: registry.internal/tickethub/orders:v1
+    # after promotion
+    image: ghcr.io/acme/tickethub-orders@sha256:828ad8c7...
+    ```
+
+3. **A reviewer merges the PR** — this is the deployment approval. Because `main` is branch-protected, promotion opens a PR rather than pushing directly; the merge is the audited "go" decision.
+4. **Argo CD rolls it out** — Argo CD sees the changed digest in Git and syncs it. The Deployment's `RollingUpdate` strategy brings up a new Pod, waits for `/readyz`, then retires an old one. Kyverno's `verify-image-signatures` policy (Chapter 22/24) admits **only** signed images, so an unsigned or tampered digest is rejected at admission.
+
+!!! key "Pin the digest, not the tag"
+    Promotion writes the **digest** (`@sha256:…`), not a moving tag like `:v1` or `:latest`.
+    A digest is the image's immutable content identity: it guarantees the exact bytes CI
+    built and signed are the exact bytes the cluster runs, and it makes Kyverno signature
+    verification meaningful. Tags can be re-pointed; digests cannot.
+
+!!! warning "GITHUB_TOKEN cannot bypass branch protection"
+    If `main` requires pull requests, the promote job must **open a PR** — a direct
+    `git push origin main` with the default `GITHUB_TOKEN` is rejected by the ruleset.
+    Enable *Settings → Actions → General → Allow GitHub Actions to create and approve pull
+    requests* so the job can open the promotion PR automatically.
+
+### 28.6 Nuances, Gotchas & Architect Considerations
 
 !!! tip "Nuances — subtle behaviours to internalise"
     - **Argo CD `sync` applies manifests in dependency order via sync waves**, but the wave mechanism is opt-in (annotation `argocd.argoproj.io/sync-wave: "N"`). Without explicit wave annotations, Argo CD applies all resources simultaneously — which can create ordering failures (e.g., a Deployment being created before its ConfigMap or Secret exists).

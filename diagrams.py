@@ -1333,6 +1333,35 @@ flowchart TB
   NOTE["The bootstrap order from Ch 9 is encoded as Argo sync-waves. One root<br/>app manages child apps; lower waves sync first. The whole platform is<br/>reproducible from Git in the correct order."]
 """ + PALETTE
 
+DIAGRAMS["28-cicd-promotion-flow"] = T + """
+flowchart LR
+  DEV["Developer<br/>push / PR to main"]:::user
+  subgraph CI["GitHub Actions CI (never touches the cluster)"]
+    direction TB
+    DETECT["detect changed<br/>services"]:::edge
+    TEST["build + test<br/>(Go, Python, frontend)"]:::svc
+    KCONF["validate manifests<br/>(kubeconform)"]:::svc
+    BUILD["build image<br/>ghcr.io/.../tickethub-svc"]:::svc
+    SIGN["cosign sign<br/>by digest"]:::plat
+    DETECT --> TEST --> KCONF --> BUILD --> SIGN
+  end
+  subgraph PROMO["Promotion (GitOps write-back)"]
+    direction TB
+    REWRITE["pin signed digest into<br/>30-workloads/svc-deployment.yaml"]:::edge
+    PR["open promotion PR<br/>-> review -> merge"]:::edge
+    REWRITE --> PR
+  end
+  GIT["Git main<br/>(desired state)"]:::edge
+  ARGO["Argo CD app-of-apps<br/>sync waves 1..9"]:::plat
+  K8S["Kubernetes<br/>rolling update, probes,<br/>Kyverno verify signature"]:::svc
+  DEV --> DETECT
+  SIGN --> REWRITE
+  PR --> GIT
+  GIT --> ARGO -->|"apply pinned digest"| K8S
+  K8S -.->|"drift detected"| ARGO
+  NOTE["CI builds, tests and SIGNS images but holds no cluster credentials.<br/>Promotion pins the signed digest in Git via a PR. Argo CD pulls Git and<br/>rolls it out; Kyverno admits only signed images. Rollback = git revert."]
+""" + PALETTE
+
 # ===========================================================================
 # CHAPTER 29 — End-to-end recap
 # ===========================================================================
