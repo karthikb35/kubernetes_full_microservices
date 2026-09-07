@@ -1,0 +1,6 @@
+apiVersion: v2
+name: tickethub
+description: TicketHub application workloads — one template set for all 9 services (Deployment, Service, HPA, PDB, NetworkPolicy).
+type: application
+version: 0.1.0
+appVersion: "1.0.0"

@@ -1,0 +1,15 @@
+{{- range $name, $svc := .Values.services }}
+{{- $pdb := mergeOverwrite (deepCopy $.Values.defaults.pdb) (default dict $svc.pdb) }}
+{{- if $pdb.enabled }}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ $name }}
+  namespace: {{ $.Values.namespace }}
+spec:
+  minAvailable: {{ $pdb.minAvailable }}
+  selector:
+    matchLabels: { app: {{ $name }} }
+{{- end }}
+{{- end }}

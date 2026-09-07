@@ -25,15 +25,17 @@ repo/
     ├── 00-namespaces/   # namespaces, ResourceQuota, LimitRange              [Ch 9]
     ├── 10-platform/     # MetalLB, Cilium Gateway API, Rook-Ceph, StorageClasses  [Ch 6-8]
     ├── 20-data/         # Postgres, Redis, Kafka StatefulSets                [Ch 11,14]
-    ├── 30-workloads/    # Deployments + Services for the 9 services          [Ch 11-12]
     ├── 40-config/       # ConfigMaps + Secrets                               [Ch 13]
-    ├── 50-scaling/      # HPA / VPA / KEDA / PriorityClass / PDB             [Ch 16-17]
-    ├── 60-security/     # RBAC, NetworkPolicy, Kyverno, Falco                [Ch 19-23]
+    ├── 50-scaling/      # VPA / KEDA / PriorityClass / custom HPA            [Ch 16-17]
+    ├── 60-security/     # RBAC, Kyverno, Falco                               [Ch 19-23]
     └── 70-observability/# Prometheus, Grafana, Loki                          [Ch 26]
 ```
 
-The `argocd/` folder holds the app-of-apps that delivers all of the above via
-GitOps sync waves (Chapter 28).
+The 9 application services (Deployment, Service, HPA, PDB, and NetworkPolicy) are
+delivered by a single **Helm chart** in [`charts/tickethub/`](charts/tickethub/),
+rendered by Argo CD. One `values.yaml` drives all services; the CI promote job
+pins each service's signed digest into that file (Chapter 28). The `argocd/`
+folder holds the app-of-apps that delivers everything via GitOps sync waves.
 
 ## Per-manifest documentation
 

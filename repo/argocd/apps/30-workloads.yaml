@@ -1,5 +1,6 @@
-# Application workloads — Deployments + Services for the 9 services (Ch 11-12).
-# The CI promote job rewrites the image references in this path to signed digests.
+# Application workloads — rendered from the Helm chart at repo/charts/tickethub
+# (Deployment, Service, HPA, PDB, NetworkPolicy, migrate Job for all 9 services).
+# The CI promote job rewrites the signed image digests in the chart's values.yaml.
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
@@ -14,7 +15,9 @@ spec:
   source:
     repoURL: https://github.com/karthikb35/kubernetes_full_microservices.git
     targetRevision: main
-    path: repo/manifests/30-workloads
+    path: repo/charts/tickethub
+    helm:
+      releaseName: tickethub
   destination:
     server: https://kubernetes.default.svc
     namespace: tickethub
