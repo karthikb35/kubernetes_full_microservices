@@ -70,11 +70,19 @@ OpenShift offers several installers; pick by environment:
 | **Assisted Installer** | Guided bare metal | Web UI at console.redhat.com drives it |
 | **SNO** (single-node) | Edge / labs | One node runs control plane + workloads |
 
+!!! mental "Mental model — how you get a house"
+    **IPI** is a developer building a whole subdivision — it creates the machines *and* the
+    cluster. **UPI** is hiring a builder for a plot you already own. The **Agent-based**
+    installer is a **flat-packed house that assembles itself once you plug it in**: hand each
+    node the ISO and it self-erects into a cluster. Same house, different amount of site work.
+
 For the TicketHub bare-metal scenario (Chapter 2), the **Agent-based installer** is the direct replacement for the entire Chapter 5 kubeadm sequence.
 
 ### 8A.4 Bare-metal bring-up, end to end (Agent-based)
 
 Where Chapter 5 was *prep every node → init → install CNI → join → label*, OpenShift compresses that into **two config files and one ISO** — the CNI, storage bootstrap, registry, and monitoring all come up as part of the install.
+
+![Agent-based install flow](assets/diagrams/08b-agent-install-flow.png)
 
 ```yaml
 # install-config.yaml — the cluster shape (analogous to kubeadm-config.yaml, Ch 5)
@@ -127,6 +135,12 @@ openshift-install agent wait-for install-complete --dir ./cluster
 
 That single flow replaces **Chapters 5, 6, and most of 7–8**: HA control plane (5), CNI (6), and the load-balancer/ingress plumbing (7) arrive together. Storage is then a one-click Operator (8A.6).
 
+!!! mental "Mental model — a seed crystal"
+    The `agent.iso` is a **seed crystal** dropped into a solution: boot it on the nodes and
+    the cluster **crystallises itself** — one node becomes the rendezvous point, etcd forms,
+    then the control plane, OVN CNI, registry and monitoring precipitate out and lock into
+    place with no further hand-assembly.
+
 !!! key "The big difference: assembly vs installation"
     In Chapters 5–8 *you* are the integrator — you install and version each layer. With
     OpenShift the **distribution owns the integration**: one installer version pins a
@@ -160,9 +174,25 @@ That single flow replaces **Chapters 5, 6, and most of 7–8**: HA control plane
     read-only root filesystem, so they comply — but a hardcoded `runAsUser: 1000` would
     be rejected. Prefer `runAsNonRoot: true` without a fixed UID on OpenShift.
 
+![SCC vs PSA admission](assets/diagrams/08b-scc-vs-psa.png)
+
+!!! mental "Mental model — a stricter dress code"
+    PSA is a **bouncer checking a dress code** at the namespace door: no root, no extra
+    capabilities, seccomp on. SCC is the **same bouncer, but he also stamps your hand with a
+    random ID** on the way in (the random UID) — so your outfit must not depend on being a
+    specific person. Dress generically (no hardcoded UID) and you walk into both clubs.
+
 ### 8A.6 How TicketHub maps on — almost unchanged
 
 The workloads from Part III onward need only small, mechanical adjustments:
+
+![TicketHub on OpenShift](assets/diagrams/08b-tickethub-on-ocp.png)
+
+!!! mental "Mental model — same furniture, new house"
+    Moving TicketHub to OpenShift is **relocating your furniture to a new house**: the sofa,
+    table and bed (the Helm chart, Argo CD apps, workloads) are identical and just get carried
+    in. Only the **doorway** (a `Route` instead of a Gateway API `HTTPRoute`) and the
+    **plumbing hookup** (an ODF StorageClass) are shaped differently in the new house.
 
 | TicketHub artifact | On OpenShift |
 |--------------------|-------------|
