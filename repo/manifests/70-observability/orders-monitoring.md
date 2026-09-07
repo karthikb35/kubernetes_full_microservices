@@ -27,7 +27,7 @@ Both carry `release: kube-prometheus-stack` so the Prometheus operator selects t
 ![orders monitoring](../../../assets/diagrams/mf-70-orders-monitoring.png)
 
 **Interacts with**
-- [`../30-workloads/orders-deployment.yaml`](../30-workloads/orders-deployment.yaml) — exposes the `metrics` port scraped here.
+- [`orders` (Helm chart)](../../charts/tickethub/) — exposes the `metrics` port scraped here.
 - [`../50-scaling/orders-hpa-custom.yaml`](../50-scaling/orders-hpa-custom.yaml) + [`prometheus-adapter-config.yaml`](../50-scaling/prometheus-adapter-config.yaml) — reuse these metrics for autoscaling.
 
 ## Concept

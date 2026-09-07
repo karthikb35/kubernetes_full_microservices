@@ -27,7 +27,7 @@ API (as opposed to network access, which lives in the NetworkPolicy).
 ![orders RBAC](../../../assets/diagrams/mf-60-orders-rbac.png)
 
 **Interacts with**
-- [`../30-workloads/orders-deployment.yaml`](../30-workloads/orders-deployment.yaml) — the workload that would run under `orders-sa`.
+- [`orders` (Helm chart)](../../charts/tickethub/) — the workload that would run under `orders-sa`.
 - [`../40-config/configmaps.yaml`](../40-config/configmaps.yaml) — the only resource this Role can read.
 
 ## Concept

@@ -27,7 +27,7 @@ per-container defaults so pods that omit requests/limits still behave.
 
 **Interacts with**
 - [`namespaces.yaml`](namespaces.yaml) — the `tickethub` namespace these attach to.
-- Every Deployment/Job in [`../30-workloads/`](../30-workloads/) — their requests are counted against the quota.
+- Every Deployment/Job in [the Helm chart](../../charts/tickethub/) — their requests are counted against the quota.
 - [`../50-scaling/`](../50-scaling/) HPAs — scaling is bounded by remaining quota headroom.
 
 ## Concept

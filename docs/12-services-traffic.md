@@ -28,7 +28,7 @@ A Service has a **selector** (`app: orders`). Kubernetes continuously maintains 
 The standard TicketHub Service is a plain **ClusterIP**:
 
 ```yaml
-# repo/manifests/30-workloads/orders-deployment.yaml (Service section)
+# rendered by repo/charts/tickethub (templates/service.yaml; values: orders)
 apiVersion: v1
 kind: Service
 metadata:

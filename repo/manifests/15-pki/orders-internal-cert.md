@@ -29,7 +29,7 @@ per-pod StatefulSet DNS names).
 
 **Interacts with**
 - [`internal-ca.yaml`](internal-ca.yaml) — the signing issuer.
-- [`../30-workloads/orders-deployment.yaml`](../30-workloads/orders-deployment.yaml) — mounts the `orders-tls` Secret.
+- [`orders` (Helm chart)](../../charts/tickethub/) — mounts the `orders-tls` Secret.
 - [`trust-bundle.yaml`](trust-bundle.yaml) — lets callers trust this cert's chain.
 
 ## Concept

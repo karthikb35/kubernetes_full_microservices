@@ -28,7 +28,7 @@ recovery.
 **Interacts with**
 - [`../20-data/postgres-statefulset.yaml`](../20-data/postgres-statefulset.yaml) + [`kafka-statefulset.yaml`](../20-data/kafka-statefulset.yaml) — the stateful volumes snapshotted.
 - [`../10-platform/storageclasses.yaml`](../10-platform/storageclasses.yaml) — `Retain` + CSI snapshots underpin recoverability.
-- [`../50-scaling/pdb.yaml`](../50-scaling/pdb.yaml) — PDBs protect availability during the node upgrades DR planning covers.
+- [PodDisruptionBudgets (Helm chart)](../../charts/tickethub/templates/pdb.yaml) — PDBs protect availability during the node upgrades DR planning covers.
 
 ## Concept
 

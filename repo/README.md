@@ -54,8 +54,8 @@ kubectl apply -f manifests/00-namespaces/
 # platform (Helm charts in the book; raw CRs here)
 kubectl apply -f manifests/10-platform/
 kubectl apply -f manifests/20-data/
-kubectl apply -f manifests/30-workloads/
 kubectl apply -f manifests/40-config/
+helm upgrade --install tickethub charts/tickethub   # the 9 services
 kubectl apply -f manifests/50-scaling/
 kubectl apply -f manifests/60-security/
 kubectl apply -f manifests/70-observability/
@@ -70,10 +70,10 @@ kubectl apply -f manifests/70-observability/
 ## Continuous delivery
 
 CI (`.github/workflows/ci.yml`) builds, tests, and **signs** an image per changed
-service, then a `promote` job pins the **signed digest** into the matching
-`manifests/30-workloads/<svc>-deployment.yaml` and opens a pull request. Merging
-the PR is the deploy approval; Argo CD then rolls out the new digest. CI never
-holds cluster credentials (Chapter 28).
+service, then a `promote` job pins the **signed digest** into the matching service's
+`image:` field in `charts/tickethub/values.yaml` and opens a pull request. Merging
+the PR is the deploy approval; Argo CD re-renders the chart and rolls out the new
+digest. CI never holds cluster credentials (Chapter 28).
 
 ## Status
 

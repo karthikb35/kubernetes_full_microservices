@@ -27,7 +27,7 @@ Both reference the `vault-backend` ClusterSecretStore, refresh every 1h.
 ![external secrets](../../../assets/diagrams/mf-40-external-secrets.png)
 
 **Interacts with**
-- [`../30-workloads/orders-deployment.yaml`](../30-workloads/orders-deployment.yaml) + [`db-migrate-job.yaml`](../30-workloads/db-migrate-job.yaml) — consume Secret `orders-db`.
+- [`orders` and the migrate Job (Helm chart)](../../charts/tickethub/) — consume Secret `orders-db`.
 - [`../20-data/postgres-statefulset.yaml`](../20-data/postgres-statefulset.yaml) — consumes Secret `postgres-db`.
 
 ## Concept

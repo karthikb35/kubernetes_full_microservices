@@ -28,7 +28,7 @@ pillar of observability.
 ![otel collector and tempo](../../../assets/diagrams/mf-70-otel-collector-tempo.png)
 
 **Interacts with**
-- [`../30-workloads/orders-deployment.yaml`](../30-workloads/orders-deployment.yaml) — its `OTEL_EXPORTER_OTLP_ENDPOINT` points here.
+- [`orders` (Helm chart)](../../charts/tickethub/) — its `OTEL_EXPORTER_OTLP_ENDPOINT` points here.
 - [`orders-monitoring.yaml`](orders-monitoring.yaml) — metrics pillar alongside this traces pillar.
 
 ## Concept
