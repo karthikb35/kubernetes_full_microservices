@@ -1,0 +1,82 @@
+{{- range $name, $svc := .Values.services }}
+{{- $res := mergeOverwrite (deepCopy $.Values.defaults.resources) (default dict $svc.resources) }}
+{{- $port := default $.Values.defaults.containerPort $svc.containerPort }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name }}
+  namespace: {{ $.Values.namespace }}
+  labels: { app: {{ $name }} }
+spec:
+  replicas: {{ default $.Values.defaults.replicas $svc.replicas }}
+  selector:
+    matchLabels: { app: {{ $name }} }
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  template:
+    metadata:
+      labels: { app: {{ $name }} }
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: {{ $name }}
+          image: {{ $svc.image }}
+          ports:
+            - { name: http, containerPort: {{ $port }} }
+            {{- if $svc.metricsPort }}
+            - { name: metrics, containerPort: {{ $svc.metricsPort }} }
+            {{- end }}
+          {{- if $svc.configMap }}
+          envFrom:
+            - configMapRef: { name: {{ $svc.configMap }} }
+          {{- end }}
+          {{- if or $svc.otel $svc.secretEnv }}
+          env:
+            {{- range $svc.secretEnv }}
+            - name: {{ .name }}
+              valueFrom:
+                secretKeyRef: { name: {{ .secret }}, key: {{ .key }} }
+            {{- end }}
+            {{- if $svc.otel }}
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: "{{ $.Values.otelEndpoint }}"
+            {{- end }}
+          {{- end }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: ["ALL"] }
+          resources:
+            requests:
+              cpu: {{ $res.requests.cpu | quote }}
+              memory: {{ $res.requests.memory | quote }}
+            limits:
+              cpu: {{ $res.limits.cpu | quote }}
+              memory: {{ $res.limits.memory | quote }}
+          readinessProbe:
+            httpGet: { path: {{ default $.Values.defaults.readinessPath $svc.readinessPath }}, port: {{ $port }} }
+            initialDelaySeconds: 3
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: { path: {{ default $.Values.defaults.livenessPath $svc.livenessPath }}, port: {{ $port }} }
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          {{- if $svc.nginxWritableMounts }}
+          volumeMounts:
+            - { name: tmp, mountPath: /tmp }
+            - { name: cache, mountPath: /var/cache/nginx }
+            - { name: run, mountPath: /var/run }
+          {{- end }}
+      {{- if $svc.nginxWritableMounts }}
+      volumes:
+        - { name: tmp, emptyDir: {} }
+        - { name: cache, emptyDir: {} }
+        - { name: run, emptyDir: {} }
+      {{- end }}
+{{- end }}

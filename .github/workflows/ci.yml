@@ -74,6 +74,21 @@ jobs:
           # fragments (no kind), not Kubernetes objects — skip them.
           args: -summary -ignore-missing-schemas -ignore-filename-pattern prometheus-adapter-config.yaml -ignore-filename-pattern falco-rules.yaml repo/manifests/
 
+  helm:
+    name: Validate Helm chart
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/setup-helm@v4
+        with:
+          version: v3.16.3
+      - name: Lint, render & schema-validate the chart
+        run: |
+          helm lint repo/charts/tickethub
+          helm template tickethub repo/charts/tickethub > rendered.yaml
+          curl -sSL https://github.com/yannh/kubeconform/releases/latest/download/kubeconform-linux-amd64.tar.gz | tar xz kubeconform
+          ./kubeconform -summary -ignore-missing-schemas rendered.yaml
+
   detect:
     name: Detect changed services
     # Compute which service dirs changed so we only build/sign/publish (and only
@@ -256,29 +271,26 @@ jobs:
           path: digests
           merge-multiple: true
 
-      - name: Rewrite Deployment image references to signed digests
+      - name: Pin signed digests into the Helm chart values
         id: promote
         run: |
           shopt -s nullglob
+          values="repo/charts/tickethub/values.yaml"
           changed=0
           for f in digests/*.txt; do
             svc=$(basename "$f" .txt)
             ref=$(cat "$f")
-            manifest="repo/manifests/30-workloads/${svc}-deployment.yaml"
-            if [ ! -f "$manifest" ]; then
-              echo "No workload manifest for '$svc' — skipping."
-              continue
-            fi
-            before=$(sha1sum "$manifest" | cut -d' ' -f1)
-            # Match the container image line for this service (registry '/tickethub/svc'
-            # or GHCR '/tickethub-svc', tag ':...' or digest '@...') and pin the digest.
-            sed -i -E "s|^([[:space:]]*image:[[:space:]]*).*tickethub[/-]${svc}[:@].*$|\1${ref}|g" "$manifest"
-            after=$(sha1sum "$manifest" | cut -d' ' -f1)
+            before=$(sha1sum "$values" | cut -d' ' -f1)
+            # Match this service's image line (registry '/tickethub/svc' or GHCR
+            # '/tickethub-svc', tag ':...' or digest '@...') and pin the digest.
+            # 'orders-migrate' is left untouched (no ':' or '@' right after 'orders').
+            sed -i -E "s|^([[:space:]]*image:[[:space:]]*).*tickethub[/-]${svc}[:@].*$|\1${ref}|g" "$values"
+            after=$(sha1sum "$values" | cut -d' ' -f1)
             if [ "$before" != "$after" ]; then
               echo "Promoted $svc -> $ref"
               changed=1
             else
-              echo "No image line matched for '$svc' in $manifest."
+              echo "No image line matched for '$svc' in $values."
             fi
           done
           echo "changed=$changed" >> "$GITHUB_OUTPUT"
@@ -289,7 +301,7 @@ jobs:
         if: steps.promote.outputs.changed == '1'
         uses: peter-evans/create-pull-request@v6
         with:
-          add-paths: repo/manifests/30-workloads/*.yaml
+          add-paths: repo/charts/tickethub/values.yaml
           branch: promote/${{ github.sha }}
           base: main
           delete-branch: true
@@ -298,8 +310,9 @@ jobs:
           body: |
             Automated GitOps promotion.
 
-            Pins the changed service Deployments to the image digests built and
-            signed from commit ${{ github.sha }}. Merge to let Argo CD roll them out.
+            Pins the changed services to the image digests built and signed from
+            commit ${{ github.sha }} in the Helm chart values. Merge to let Argo CD
+            render the chart and roll them out.
 
   cleanup-images:
     name: Prune old GHCR versions

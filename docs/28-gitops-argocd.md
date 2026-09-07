@@ -127,6 +127,36 @@ The flow, end to end:
     Enable *Settings → Actions → General → Allow GitHub Actions to create and approve pull
     requests* so the job can open the promotion PR automatically.
 
+#### Packaging the workloads as a Helm chart
+
+The 9 services are near-identical (same probes, security context, ports, rollout
+strategy), so instead of 9 hand-written manifest sets they are delivered by **one
+Helm chart** at `repo/charts/tickethub/`. A single `values.yaml` lists each service
+(image, ports, config, scaling, network policy); the chart templates render the
+`Deployment`, `Service`, `HorizontalPodAutoscaler`, `PodDisruptionBudget`,
+`NetworkPolicy`, and migration `Job` for all of them.
+
+Argo CD renders the chart directly — the workloads `Application` points at the chart
+path and Argo runs `helm template` internally, then reconciles the output:
+
+```yaml
+source:
+  repoURL: https://github.com/karthikb35/kubernetes_full_microservices.git
+  path: repo/charts/tickethub
+  helm:
+    releaseName: tickethub
+```
+
+Promotion changes accordingly: the CI job pins each signed digest into the service's
+`image:` field in `values.yaml` (instead of a raw Deployment), and Argo CD re-renders
+the chart. This is the clean split — **Helm** decides *how manifests are generated*,
+**Argo CD** decides *how they reach the cluster*.
+
+!!! tip "Helm and Argo CD are complementary, not alternatives"
+    Helm is a templating/packaging tool; Argo CD is a GitOps reconciler. Using them
+    together gives DRY, parameterised manifests *and* pull-based, self-healing delivery —
+    the same signed-digest promotion flow, with one `values.yaml` instead of nine files.
+
 ### 28.6 Nuances, Gotchas & Architect Considerations
 
 !!! tip "Nuances — subtle behaviours to internalise"

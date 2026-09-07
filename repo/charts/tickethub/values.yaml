@@ -1,0 +1,136 @@
+# TicketHub workloads — values drive one template set for all 9 services.
+# The CI promote job (Ch 28) rewrites each service's `image:` line below to the
+# signed GHCR digest; Argo CD renders this chart and rolls out the change.
+namespace: tickethub
+otelEndpoint: "otel-collector.monitoring.svc.cluster.local:4317"
+
+# Defaults applied to every service unless overridden in its block.
+defaults:
+  replicas: 3
+  containerPort: 8080
+  servicePort: 80
+  readinessPath: /readyz
+  livenessPath: /healthz
+  resources:
+    requests: { cpu: "100m", memory: "128Mi" }
+    limits: { cpu: "500m", memory: "512Mi" }
+  hpa:
+    enabled: false
+    minReplicas: 3
+    maxReplicas: 15
+    targetCPU: 70
+  pdb:
+    enabled: true
+    minAvailable: 2
+
+# One-shot schema migration Job (Ch 11), run before the app serves traffic.
+migrate:
+  enabled: true
+  image: registry.internal/tickethub/orders-migrate:v1
+  command: ["/migrate", "up"]
+  secretEnv:
+    - { name: DB_PASSWORD, secret: orders-db, key: DB_PASSWORD }
+
+services:
+  gateway:
+    image: registry.internal/tickethub/gateway:v1
+    servicePort: 8080
+    configMap: gateway-config
+    hpa: { enabled: true, minReplicas: 3, maxReplicas: 20, targetCPU: 70 }
+    networkPolicy:
+      ingress:
+        - { fromAny: true, ports: [8080] }
+      egress:
+        - { toApps: [orders, catalog], ports: [8080] }
+
+  frontend:
+    image: registry.internal/tickethub/frontend:v1
+    servicePort: 80
+    readinessPath: /
+    livenessPath: /
+    nginxWritableMounts: true
+    resources:
+      requests: { cpu: "50m", memory: "64Mi" }
+      limits: { cpu: "300m", memory: "256Mi" }
+    hpa: { enabled: true, minReplicas: 3, maxReplicas: 15, targetCPU: 70 }
+    networkPolicy:
+      ingress:
+        - { fromAny: true, ports: [8080] }
+
+  orders:
+    image: ghcr.io/karthikb35/tickethub-orders@sha256:828ad8c7a83ef167784f97db6b302002814c32066e4a0af77a23ec64bc4aa6c9
+    servicePort: 80
+    configMap: orders-config
+    metricsPort: 9090
+    otel: true
+    secretEnv:
+      - { name: DB_PASSWORD, secret: orders-db, key: DB_PASSWORD }
+    resources:
+      requests: { cpu: "150m", memory: "192Mi" }
+      limits: { cpu: "750m", memory: "768Mi" }
+    # HPA stays raw (50-scaling/orders-hpa-custom.yaml — custom metrics).
+    networkPolicy:
+      ingress:
+        - { fromApps: [gateway], ports: [8080] }
+      egress:
+        - { toApps: [payments], ports: [8080] }
+        - { toNamespace: data, toApp: postgres, ports: [5432] }
+
+  catalog:
+    image: ghcr.io/karthikb35/tickethub-catalog@sha256:a430d92ab843ab513634bcc2abb35a3de98ca114848b2c3850e48b6972ff2f7c
+    servicePort: 80
+    configMap: catalog-config
+    hpa: { enabled: true, minReplicas: 3, maxReplicas: 20, targetCPU: 70 }
+    networkPolicy:
+      ingress:
+        - { fromApps: [gateway], ports: [8080] }
+      egress:
+        - { toApps: [search], ports: [8080] }
+
+  users:
+    image: registry.internal/tickethub/users:v1
+    servicePort: 80
+    configMap: users-config
+    hpa: { enabled: true, minReplicas: 3, maxReplicas: 15, targetCPU: 70 }
+    networkPolicy:
+      ingress:
+        - { fromApps: [gateway], ports: [8080] }
+
+  inventory:
+    image: registry.internal/tickethub/inventory:v1
+    servicePort: 80
+    configMap: inventory-config
+    hpa: { enabled: true, minReplicas: 3, maxReplicas: 15, targetCPU: 70 }
+    networkPolicy:
+      ingress:
+        - { fromApps: [gateway, orders], ports: [8080] }
+
+  payments:
+    image: registry.internal/tickethub/payments:v1
+    servicePort: 80
+    configMap: payments-config
+    hpa: { enabled: true, minReplicas: 3, maxReplicas: 15, targetCPU: 70 }
+    networkPolicy:
+      ingress:
+        - { fromApps: [orders], ports: [8080] }
+
+  search:
+    image: registry.internal/tickethub/search:v1
+    servicePort: 80
+    replicas: 2
+    configMap: search-config
+    pdb: { enabled: true, minAvailable: 1 }
+    # HPA stays raw (50-scaling/search-vpa.yaml — VPA).
+    networkPolicy:
+      ingress:
+        - { fromApps: [catalog], ports: [8080] }
+
+  notifications:
+    image: registry.internal/tickethub/notifications:v1
+    servicePort: 80
+    replicas: 1
+    configMap: notifications-config
+    # Scaling via KEDA (50-scaling/notifications-keda.yaml).
+    networkPolicy:
+      egress:
+        - { toNamespace: data, toApp: kafka, ports: [9092] }

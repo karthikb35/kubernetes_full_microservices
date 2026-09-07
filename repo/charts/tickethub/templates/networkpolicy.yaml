@@ -1,0 +1,59 @@
+# Zero-trust networking: default-deny + explicit per-service allows (Ch 21).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-all
+  namespace: {{ .Values.namespace }}
+spec:
+  podSelector: {}
+  policyTypes: [Ingress, Egress]
+{{- range $name, $svc := .Values.services }}
+{{- $np := default dict $svc.networkPolicy }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $name }}-allow
+  namespace: {{ $.Values.namespace }}
+spec:
+  podSelector:
+    matchLabels: { app: {{ $name }} }
+  policyTypes: [Ingress, Egress]
+  {{- if $np.ingress }}
+  ingress:
+    {{- range $np.ingress }}
+    - ports:
+        {{- range .ports }}
+        - { protocol: TCP, port: {{ . }} }
+        {{- end }}
+      {{- if .fromApps }}
+      from:
+        {{- range .fromApps }}
+        - podSelector: { matchLabels: { app: {{ . }} } }
+        {{- end }}
+      {{- end }}
+    {{- end }}
+  {{- end }}
+  egress:
+    {{- range $np.egress }}
+    - ports:
+        {{- range .ports }}
+        - { protocol: TCP, port: {{ . }} }
+        {{- end }}
+      {{- if .toApps }}
+      to:
+        {{- range .toApps }}
+        - podSelector: { matchLabels: { app: {{ . }} } }
+        {{- end }}
+      {{- else if .toApp }}
+      to:
+        - namespaceSelector:
+            matchLabels: { kubernetes.io/metadata.name: {{ .toNamespace }} }
+          podSelector: { matchLabels: { app: {{ .toApp }} } }
+      {{- end }}
+    {{- end }}
+    - to: []                          # DNS — always allowed under default-deny egress
+      ports:
+        - { protocol: UDP, port: 53 }
+        - { protocol: TCP, port: 53 }
+{{- end }}

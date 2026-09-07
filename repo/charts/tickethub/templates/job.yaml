@@ -1,9 +1,10 @@
-# Schema migration as a Job — runs to completion before the app rolls out (Ch 11).
+{{- if .Values.migrate.enabled }}
+# Schema migration Job — runs to completion before the app rolls out (Ch 11).
 apiVersion: batch/v1
 kind: Job
 metadata:
   name: orders-db-migrate
-  namespace: tickethub
+  namespace: {{ .Values.namespace }}
 spec:
   backoffLimit: 3
   template:
@@ -16,13 +17,18 @@ spec:
         seccompProfile: { type: RuntimeDefault }
       containers:
         - name: migrate
-          image: registry.internal/tickethub/orders-migrate:v1
-          command: ["/migrate", "up"]
+          image: {{ .Values.migrate.image }}
+          command: {{ .Values.migrate.command | toJson }}
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
             capabilities: { drop: ["ALL"] }
+          {{- if .Values.migrate.secretEnv }}
           env:
-            - name: DB_PASSWORD
+            {{- range .Values.migrate.secretEnv }}
+            - name: {{ .name }}
               valueFrom:
-                secretKeyRef: { name: orders-db, key: DB_PASSWORD }
+                secretKeyRef: { name: {{ .secret }}, key: {{ .key }} }
+            {{- end }}
+          {{- end }}
+{{- end }}
