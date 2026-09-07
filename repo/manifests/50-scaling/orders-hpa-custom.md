@@ -27,7 +27,7 @@ Scale-down stabilization: 300s.
 **Interacts with**
 - [`prometheus-adapter-config.yaml`](prometheus-adapter-config.yaml) — turns the raw counter into the rate metric this HPA reads.
 - [`../70-observability/orders-monitoring.yaml`](../70-observability/orders-monitoring.yaml) — the ServiceMonitor that feeds Prometheus.
-- [`../30-workloads/orders-deployment.yaml`](../30-workloads/orders-deployment.yaml) — the scale target.
+- [`orders` (Helm chart)](../../charts/tickethub/) — the scale target.
 
 ## Concept
 

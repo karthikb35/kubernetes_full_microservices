@@ -127,9 +127,9 @@ at least `synchronousStandbys: 1` standby has flushed the WAL to disk — giving
 - [`../10-platform/storageclasses.yaml`](../10-platform/storageclasses.yaml) — supplies `rook-ceph-block`.
 
 **Consumed by**
-- [`../30-workloads/orders-deployment.yaml`](../30-workloads/orders-deployment.yaml) — connects through PgBouncer rw-pool Service.
-- [`../30-workloads/db-migrate-job.yaml`](../30-workloads/db-migrate-job.yaml) — runs schema migrations against primary.
-- [`../60-security/network-policies.yaml`](../60-security/network-policies.yaml) — restricts Postgres ingress to `orders` only.
+- [`orders` (Helm chart)](../../charts/tickethub/) — connects through PgBouncer rw-pool Service.
+- [migrate Job (Helm chart)](../../charts/tickethub/templates/job.yaml) — runs schema migrations against primary.
+- [NetworkPolicies (Helm chart)](../../charts/tickethub/templates/networkpolicy.yaml) — restricts Postgres ingress to `orders` only.
 - [`../70-observability/orders-monitoring.yaml`](../70-observability/orders-monitoring.yaml) — Prometheus scrapes replication metrics.
 
 ## Concept

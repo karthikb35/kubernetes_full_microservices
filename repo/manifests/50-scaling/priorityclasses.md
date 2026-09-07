@@ -27,7 +27,7 @@ what to place first and, under resource pressure, what to preempt.
 ![priority classes](../../../assets/diagrams/mf-50-priorityclasses.png)
 
 **Interacts with**
-- Workloads in [`../30-workloads/`](../30-workloads/) — set `priorityClassName` to one of these.
+- Workloads in [the Helm chart](../../charts/tickethub/) — set `priorityClassName` to one of these.
 - [`../00-namespaces/quota-limits.yaml`](../00-namespaces/quota-limits.yaml) — priority + quota together govern who runs under pressure.
 
 ## Concept

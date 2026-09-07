@@ -85,8 +85,8 @@ against any Kubernetes cluster (kind/minikube for local testing):
 kubectl apply -f repo/manifests/00-namespaces/
 kubectl apply -f repo/manifests/10-platform/
 kubectl apply -f repo/manifests/20-data/
-kubectl apply -f repo/manifests/30-workloads/
 kubectl apply -f repo/manifests/40-config/
+helm upgrade --install tickethub repo/charts/tickethub   # the 9 services
 kubectl apply -f repo/manifests/50-scaling/
 kubectl apply -f repo/manifests/60-security/
 kubectl apply -f repo/manifests/70-observability/
@@ -106,10 +106,11 @@ architecture:
 - **Illustrative stubs:** `users`, `catalog`, `inventory`, `payments`, `notifications`,
   `search` ship a minimal service (health/readiness + one endpoint) and a Dockerfile
   so the manifests reference real, buildable images — but they are intentionally thin.
-- **Full workload manifests:** all 9 services now have a `Deployment` + `Service` under
-  `repo/manifests/30-workloads/` with restricted Pod Security contexts, probes, HPAs,
-  PodDisruptionBudgets, and per-service NetworkPolicies — so every built image actually
-  runs. CI builds, signs, and promotes each image by digest via a pull request (Chapter 28).
+- **Full workloads for every service:** all 9 services are delivered by the Helm chart
+  in `repo/charts/tickethub/` (Deployment, Service, HPA, PodDisruptionBudget, and
+  per-service NetworkPolicy) with restricted Pod Security contexts and probes — so every
+  built image actually runs. CI builds, signs, and promotes each image by digest via a
+  pull request that updates the chart's `values.yaml` (Chapter 28).
 - **Platform components** (Cilium, MetalLB, Rook-Ceph, Prometheus, etc.) are installed
   via Helm in the book; this repo carries only the custom resources and config.
 

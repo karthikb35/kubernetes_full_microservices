@@ -40,7 +40,7 @@ desiredReplicas = ceil( currentReplicas × currentMetric / targetMetric )
 ```
 
 ```yaml
-# repo/manifests/50-scaling/catalog-hpa.yaml
+# rendered by repo/charts/tickethub (templates/hpa.yaml; values: catalog)
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:

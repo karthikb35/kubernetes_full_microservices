@@ -50,7 +50,9 @@ spec:
   source:
     repoURL: https://git.internal/tickethub/platform.git
     targetRevision: main
-    path: repo/manifests/30-workloads
+    path: repo/charts/tickethub
+    helm:
+      releaseName: tickethub
   destination:
     server: https://kubernetes.default.svc
     namespace: tickethub
@@ -103,7 +105,7 @@ GitOps says *Git is the desired state*, but something has to **write the new ima
 The flow, end to end:
 
 1. **CI builds and signs** — on a push to `main`, GitHub Actions detects which services changed, builds and tests them, builds a container image tagged by commit SHA, pushes it to GHCR, and **signs it by digest** with Cosign. CI holds **no cluster credentials**.
-2. **Promotion writes back to Git** — a `promote` job rewrites the `image:` field of each changed service's `repo/manifests/30-workloads/<svc>-deployment.yaml` to the **signed digest** (`ghcr.io/<org>/tickethub-<svc>@sha256:…`), then opens a **pull request**:
+2. **Promotion writes back to Git** — a `promote` job rewrites the `image:` field of each changed service in `repo/charts/tickethub/values.yaml` to the **signed digest** (`ghcr.io/<org>/tickethub-<svc>@sha256:…`), then opens a **pull request**:
 
     ```yaml
     # before

@@ -33,7 +33,7 @@ namespace is stamped with a `team` label (ownership) and Pod Security Admission
 
 **Interacts with**
 - [`quota-limits.yaml`](quota-limits.yaml) — attaches quota/limits to `tickethub`.
-- [`../60-security/network-policies.yaml`](../60-security/network-policies.yaml) — selects the `data` namespace by label for egress.
+- [NetworkPolicies (Helm chart)](../../charts/tickethub/templates/networkpolicy.yaml) — selects the `data` namespace by label for egress.
 - Every workload/config manifest — they set `metadata.namespace` to one of these.
 
 ## Concept

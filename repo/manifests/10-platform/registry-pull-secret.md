@@ -24,7 +24,7 @@ without per-pod configuration.
 ![registry pull secret](../../../assets/diagrams/mf-10-registry-pull-secret.png)
 
 **Interacts with**
-- All workloads in [`../30-workloads/`](../30-workloads/) — they pull `registry.internal/tickethub/*` images via this SA.
+- All workloads in [the Helm chart](../../charts/tickethub/) — they pull `registry.internal/tickethub/*` images via this SA.
 - [`../60-security/kyverno-policies.yaml`](../60-security/kyverno-policies.yaml) — `verify-image-signatures` checks those same images.
 
 ## Concept

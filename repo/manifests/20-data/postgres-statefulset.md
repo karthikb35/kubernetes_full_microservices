@@ -33,8 +33,8 @@ Config: `POSTGRES_PASSWORD` from Secret `postgres-db` key `password`;
 **Interacts with**
 - [`../40-config/external-secrets.yaml`](../40-config/external-secrets.yaml) — provisions the `postgres-db` Secret from Vault.
 - [`../10-platform/storageclasses.yaml`](../10-platform/storageclasses.yaml) — supplies `rook-ceph-block`.
-- [`../30-workloads/orders-deployment.yaml`](../30-workloads/orders-deployment.yaml) and [`db-migrate-job.yaml`](../30-workloads/db-migrate-job.yaml) — clients.
-- [`../60-security/network-policies.yaml`](../60-security/network-policies.yaml) — only `orders` may reach it on 5432.
+- [`orders` and the migrate Job (Helm chart)](../../charts/tickethub/) — clients.
+- [NetworkPolicies (Helm chart)](../../charts/tickethub/templates/networkpolicy.yaml) — only `orders` may reach it on 5432.
 
 ## Concept
 

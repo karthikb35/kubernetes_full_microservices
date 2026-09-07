@@ -26,7 +26,7 @@ A **Deployment** doesn't manage pods directly — it manages **ReplicaSets**. Ea
 ![Deployment hierarchy](assets/diagrams/11-deployment-hierarchy.png)
 
 ```yaml
-# repo/manifests/30-workloads/catalog-deployment.yaml
+# rendered by repo/charts/tickethub (templates/deployment.yaml; values: catalog)
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -116,7 +116,7 @@ spec:
 Schema migrations and scheduled reports aren't long-running services — they **finish**.
 
 ```yaml
-# repo/manifests/30-workloads/db-migrate-job.yaml
+# repo/charts/tickethub/templates/job.yaml
 apiVersion: batch/v1
 kind: Job
 metadata: { name: orders-db-migrate, namespace: tickethub }
@@ -149,7 +149,7 @@ Run migrations as a **Job** (often an Argo CD *PreSync* hook, Chapter 28) so sch
 !!! question "Architect Considerations"
     1. **Deployment vs StatefulSet boundary**: the line is "does pod identity matter?" If `orders-pod-7f4d` can replace `orders-pod-a1b2` without any state transfer, use a Deployment. If each pod has a named role (Postgres primary vs standby), use a StatefulSet. The gray area is services that use external session stores (Redis) — they are truly stateless and should use Deployments.
     2. **DaemonSet for security vs performance**: Falco, node-exporter, and Cilium agents are natural DaemonSets. But a heavy DaemonSet (e.g., a 512Mi baseline logging agent) on every node burns constant cluster-wide RAM. Always benchmark DaemonSet overhead per node type before deploying.
-    3. **Job completion vs Deployment for one-time tasks**: `db-migrate-job.yaml` (repo/manifests/30-workloads/) runs schema migrations as a Job. Migrations run in a Deployment would run in a loop forever. The key Job parameters: `backoffLimit: 3` (max retries), `restartPolicy: Never` (don't restart the pod on failure, create a new one instead).
+    3. **Job completion vs Deployment for one-time tasks**: the migrate Job (`repo/charts/tickethub/templates/job.yaml`) runs schema migrations as a Job. Migrations run in a Deployment would run in a loop forever. The key Job parameters: `backoffLimit: 3` (max retries), `restartPolicy: Never` (don't restart the pod on failure, create a new one instead).
     4. **CronJob concurrency policy**: `concurrencyPolicy: Forbid` means if the previous CronJob run is still running when the next trigger fires, the new run is skipped. For backup or batch jobs where overlapping runs would corrupt output, `Forbid` is the right choice; for idempotent jobs, `Allow` gives better throughput.
     5. **Pod disruption budget interaction with Deployments**: a PDB with `minAvailable: 2` on a 3-replica Deployment means a `kubectl rollout restart` will drain only one pod at a time — the rollout serializes. This is the correct behavior for zero-downtime restarts but multiplies the rollout duration by the replica count.
 

@@ -27,7 +27,7 @@ as environment variables — service URLs, log levels, and broker lists.
 ![configmaps](../../../assets/diagrams/mf-40-configmaps.png)
 
 **Interacts with**
-- [`../30-workloads/orders-deployment.yaml`](../30-workloads/orders-deployment.yaml) and [`catalog-deployment.yaml`](../30-workloads/catalog-deployment.yaml) — consumers.
+- [`orders` and `catalog` (Helm chart)](../../charts/tickethub/) — consumers.
 - [`../20-data/kafka-statefulset.yaml`](../20-data/kafka-statefulset.yaml) — the brokers named in `KAFKA_BROKERS`.
 
 ## Concept

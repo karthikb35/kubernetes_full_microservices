@@ -27,7 +27,7 @@ blocking bad configurations before they ever run.
 ![kyverno policies](../../../assets/diagrams/mf-60-kyverno-policies.png)
 
 **Interacts with**
-- All workloads in [`../30-workloads/`](../30-workloads/) — every pod passes through these gates.
+- All workloads in [the Helm chart](../../charts/tickethub/) — every pod passes through these gates.
 - [`../10-platform/registry-pull-secret.yaml`](../10-platform/registry-pull-secret.yaml) — the registry whose images must be signed.
 - [Ch 24 — Secrets & Supply Chain](../../../docs/24-secrets-supply-chain.md) — the Cosign signing pipeline behind `verify-image-signatures`.
 
