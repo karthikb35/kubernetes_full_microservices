@@ -1,0 +1,26 @@
+# Namespaces, ResourceQuota, LimitRange — first wave so every later app has a
+# namespace to land in (Ch 9 bootstrap order, Ch 28 app-of-apps).
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: tickethub-namespaces
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+spec:
+  project: default
+  source:
+    repoURL: https://git.internal/tickethub/platform.git
+    targetRevision: main
+    path: repo/manifests/00-namespaces
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: default
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

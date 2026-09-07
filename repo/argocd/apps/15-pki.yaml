@@ -1,0 +1,25 @@
+# PKI — internal CA (cert-manager) and issued workload certificates (Ch 7b).
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: tickethub-pki
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
+spec:
+  project: default
+  source:
+    repoURL: https://git.internal/tickethub/platform.git
+    targetRevision: main
+    path: repo/manifests/15-pki
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: tickethub
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

@@ -1,0 +1,26 @@
+# Autoscaling & disruption — HPA, VPA, KEDA, PriorityClass, PodDisruptionBudgets
+# (Ch 16-17). Applied after workloads exist so scale targets resolve.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: tickethub-scaling
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+  annotations:
+    argocd.argoproj.io/sync-wave: "7"
+spec:
+  project: default
+  source:
+    repoURL: https://git.internal/tickethub/platform.git
+    targetRevision: main
+    path: repo/manifests/50-scaling
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: tickethub
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

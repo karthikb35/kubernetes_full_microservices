@@ -212,6 +212,91 @@ jobs:
           rm -f cosign.key
           [ "${signed:-0}" = "1" ] || { echo "::error::cosign sign failed after retries"; exit 1; }
 
+      - name: Record signed digest for promotion
+        run: |
+          mkdir -p digests
+          echo "ghcr.io/${{ github.repository_owner }}/tickethub-${{ matrix.service }}@${{ steps.build.outputs.digest }}" \
+            > "digests/${{ matrix.service }}.txt"
+
+      - name: Upload digest artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: digest-${{ matrix.service }}
+          path: digests/${{ matrix.service }}.txt
+          retention-days: 1
+
+  promote:
+    name: Promote signed images to manifests
+    # GitOps promotion: after images are built & signed, pin each changed service's
+    # Deployment to its signed digest in Git. Argo CD then rolls out the new digest.
+    # A single job commits once to avoid the push races that parallel matrix jobs cause.
+    needs: [images, detect]
+    if: >-
+      always() && !cancelled()
+      && github.event_name == 'push'
+      && needs.images.result == 'success'
+      && needs.detect.outputs.services != '[]'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write        # push the promotion commit back to main
+    concurrency:
+      group: promote-${{ github.ref }}
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Download digest artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: digest-*
+          path: digests
+          merge-multiple: true
+
+      - name: Rewrite Deployment image references to signed digests
+        id: promote
+        run: |
+          shopt -s nullglob
+          changed=0
+          for f in digests/*.txt; do
+            svc=$(basename "$f" .txt)
+            ref=$(cat "$f")
+            manifest="repo/manifests/30-workloads/${svc}-deployment.yaml"
+            if [ ! -f "$manifest" ]; then
+              echo "No workload manifest for '$svc' — skipping."
+              continue
+            fi
+            before=$(sha1sum "$manifest" | cut -d' ' -f1)
+            # Match the container image line for this service (registry '/tickethub/svc'
+            # or GHCR '/tickethub-svc', tag ':...' or digest '@...') and pin the digest.
+            sed -i -E "s|^([[:space:]]*image:[[:space:]]*).*tickethub[/-]${svc}[:@].*$|\1${ref}|g" "$manifest"
+            after=$(sha1sum "$manifest" | cut -d' ' -f1)
+            if [ "$before" != "$after" ]; then
+              echo "Promoted $svc -> $ref"
+              changed=1
+            else
+              echo "No image line matched for '$svc' in $manifest."
+            fi
+          done
+          echo "changed=$changed" >> "$GITHUB_OUTPUT"
+
+      - name: Commit and push promotion
+        if: steps.promote.outputs.changed == '1'
+        run: |
+          git config user.name  "tickethub-ci[bot]"
+          git config user.email "tickethub-ci[bot]@users.noreply.github.com"
+          git add repo/manifests/30-workloads/*.yaml
+          # '[skip ci]' stops this manifest-only commit from triggering another run.
+          git commit -m "deploy: promote signed images for ${{ github.sha }} [skip ci]"
+          for attempt in 1 2 3; do
+            if git push origin HEAD:main; then exit 0; fi
+            echo "push rejected (attempt $attempt) — rebasing on main and retrying..."
+            git pull --rebase origin main
+          done
+          echo "::error::failed to push promotion commit after retries"; exit 1
+
   cleanup-images:
     name: Prune old GHCR versions
     # Runs after images are built & signed; deletes stale versions so packages

@@ -1,0 +1,25 @@
+# Security — RBAC, NetworkPolicies, Kyverno policies, Falco rules (Ch 19-23).
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: tickethub-security
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+  annotations:
+    argocd.argoproj.io/sync-wave: "8"
+spec:
+  project: default
+  source:
+    repoURL: https://git.internal/tickethub/platform.git
+    targetRevision: main
+    path: repo/manifests/60-security
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: tickethub
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

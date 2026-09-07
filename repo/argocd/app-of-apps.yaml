@@ -1,10 +1,15 @@
-# Argo CD app-of-apps: one root Application manages the whole platform,
-# encoding the Chapter 9 bootstrap order as sync waves (Ch 28).
+# Argo CD app-of-apps: one root Application that syncs every child Application in
+# repo/argocd/apps/. Each child owns one manifest layer and carries its own
+# sync-wave, so the whole platform reconstructs from Git in the Chapter 9
+# bootstrap order (Ch 28). Bootstrap once with:
+#   kubectl apply -f repo/argocd/app-of-apps.yaml
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
   name: tickethub-root
   namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
   annotations:
     argocd.argoproj.io/sync-wave: "0"
 spec:
@@ -13,32 +18,11 @@ spec:
     repoURL: https://git.internal/tickethub/platform.git
     targetRevision: main
     path: repo/argocd/apps          # directory of child Applications
+    directory:
+      recurse: true
   destination:
     server: https://kubernetes.default.svc
     namespace: argocd
-  syncPolicy:
-    automated:
-      prune: true
-      selfHeal: true
-    syncOptions: [CreateNamespace=true]
----
-# Example child Application (workloads, wave 9 = last).
-apiVersion: argoproj.io/v1alpha1
-kind: Application
-metadata:
-  name: tickethub-workloads
-  namespace: argocd
-  annotations:
-    argocd.argoproj.io/sync-wave: "9"
-spec:
-  project: default
-  source:
-    repoURL: https://git.internal/tickethub/platform.git
-    targetRevision: main
-    path: repo/manifests/30-workloads
-  destination:
-    server: https://kubernetes.default.svc
-    namespace: tickethub
   syncPolicy:
     automated:
       prune: true

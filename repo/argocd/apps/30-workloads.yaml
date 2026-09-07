@@ -1,0 +1,26 @@
+# Application workloads — Deployments + Services for the 9 services (Ch 11-12).
+# The CI promote job rewrites the image references in this path to signed digests.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: tickethub-workloads
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+  annotations:
+    argocd.argoproj.io/sync-wave: "6"
+spec:
+  project: default
+  source:
+    repoURL: https://git.internal/tickethub/platform.git
+    targetRevision: main
+    path: repo/manifests/30-workloads
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: tickethub
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

@@ -1,0 +1,26 @@
+# Platform CRs — MetalLB pool, Cilium Gateway, Rook-Ceph, registry pull secret
+# (Ch 6-8). Helm installs the controllers; Git carries only these custom resources.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: tickethub-platform
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
+spec:
+  project: default
+  source:
+    repoURL: https://git.internal/tickethub/platform.git
+    targetRevision: main
+    path: repo/manifests/10-platform
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: platform
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
