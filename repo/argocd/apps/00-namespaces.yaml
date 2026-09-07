@@ -12,7 +12,7 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: https://git.internal/tickethub/platform.git
+    repoURL: https://github.com/karthikb35/kubernetes_full_microservices.git
     targetRevision: main
     path: repo/manifests/00-namespaces
   destination:
