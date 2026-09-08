@@ -1,0 +1,13 @@
+flowchart LR
+    subgraph CP["Control plane job (controller pod)"]
+        A["Service type=LoadBalancer<br/>EXTERNAL-IP: pending"] --> B["MetalLB controller<br/>picks 10.20.0.100<br/>from IPAddressPool"]
+        B --> C["Service status updated<br/>EXTERNAL-IP: 10.20.0.100"]
+    end
+    subgraph DP["Data plane job (speaker DaemonSet)"]
+        C --> D["speaker pods advertise<br/>10.20.0.100 to the LAN"]
+        D --> E{"Advertisement mode?"}
+        E -->|L2Advertisement| F["ARP: one node answers<br/>10.20.0.100 is at my MAC"]
+        E -->|BGPAdvertisement| G["BGP: many nodes announce<br/>a route to 10.20.0.100"]
+    end
+    style CP fill:#eef3fb,stroke:#0b3d91
+    style DP fill:#eef8f1,stroke:#1b7a3d

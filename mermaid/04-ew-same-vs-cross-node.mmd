@@ -1,0 +1,11 @@
+flowchart TD
+    subgraph SN["Case A — same node (fast path)"]
+        A1["orders pod"] --> A2["eBPF DNAT in kernel"] --> A3["inventory pod<br/>(same node, no wire)"]
+    end
+    subgraph XN["Case B — cross node"]
+        B1["orders pod<br/>worker-gen-2"] --> B2["eBPF DNAT + encap"]
+        B2 -->|"VXLAN/Geneve over<br/>node net 10.10.0.0/24"| B3["worker-gen-3 kernel"]
+        B3 --> B4["decap to inventory pod"]
+    end
+    style SN fill:#eef8f1,stroke:#1b7a3d
+    style XN fill:#eef3fb,stroke:#0b3d91

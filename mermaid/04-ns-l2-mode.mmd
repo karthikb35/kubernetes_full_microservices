@@ -1,0 +1,9 @@
+flowchart TD
+    C["Client to 10.20.0.100"] --> SW["LAN switch"]
+    SW -->|"ARP answered by leader"| N1["worker-infra-1 (leader)"]
+    SW -.->|"silent (standby)"| N2["worker-infra-2 (standby)"]
+    SW -.->|"silent (standby)"| N3["worker-gen-1 (standby)"]
+    N1 --> GW["Cilium to Gateway pod"]
+    style N1 fill:#eef8f1,stroke:#1b7a3d
+    style N2 fill:#f6f8fa,stroke:#9aa4b2
+    style N3 fill:#f6f8fa,stroke:#9aa4b2

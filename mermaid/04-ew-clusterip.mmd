@@ -1,0 +1,7 @@
+flowchart LR
+    O["orders pod<br/>10.244.22.9"] -->|"1 DNS query"| D["CoreDNS<br/>10.96.0.10"]
+    D -->|"2 returns ClusterIP<br/>10.96.45.12"| O
+    O -->|"3 connect 10.96.45.12:80"| E["Cilium eBPF<br/>on orders node"]
+    E -->|"4 eBPF DNAT +<br/>load-balance"| P1["inventory pod A<br/>10.244.31.4"]
+    E -.->|"or"| P2["inventory pod B<br/>10.244.55.8"]
+    style E fill:#f0edfb,stroke:#5b3fa0

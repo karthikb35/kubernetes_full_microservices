@@ -1,0 +1,27 @@
+sequenceDiagram
+    autonumber
+    participant U as User laptop<br/>10.0.5.55
+    participant DNS as DNS server
+    participant SW as LAN switch / router
+    participant SP as MetalLB speaker<br/>(worker-infra-1)
+    participant GW as Gateway Envoy pod<br/>10.244.41.7
+    participant K as Cilium eBPF<br/>(kernel)
+    participant API as api pod<br/>10.244.22.9
+
+    U->>DNS: A? tickethub.com
+    DNS-->>U: 10.20.0.100
+    Note over U,SW: L2/L3 — get the packet onto a node
+    U->>SW: Who has 10.20.0.100? (ARP)
+    SP-->>SW: 10.20.0.100 is at aa:bb:cc:00:00:41
+    U->>SP: TCP SYN to 10.20.0.100:443 (lands on worker-infra-1 NIC)
+    Note over SP,GW: Cilium DNATs the LoadBalancer IP to a Gateway pod
+    SP->>GW: forward to 10.244.41.7:8443
+    Note over U,GW: L7 — TLS + HTTP routing
+    U->>GW: TLS ClientHello (SNI: tickethub.com)
+    GW-->>U: TLS handshake (Envoy terminates, holds the cert)
+    U->>GW: GET /api/orders  Host: tickethub.com
+    GW->>GW: HTTPRoute match: /api/* to api Service
+    Note over GW,API: L3/L4 — ClusterIP to a healthy pod
+    GW->>K: connect 10.96.45.12:80 (ClusterIP)
+    K->>API: eBPF DNAT to 10.244.22.9:8080
+    API-->>U: 200 OK (response retraces the path)

@@ -174,21 +174,7 @@ Services and does the two things the cloud used to do: (1) hand out an IP, and
 
 #### 4.7.3 What MetalLB does, split into its two halves
 
-```mermaid
-flowchart LR
-    subgraph CP["Control plane job (controller pod)"]
-        A["Service type=LoadBalancer<br/>EXTERNAL-IP: pending"] --> B["MetalLB controller<br/>picks 10.20.0.100<br/>from IPAddressPool"]
-        B --> C["Service status updated<br/>EXTERNAL-IP: 10.20.0.100"]
-    end
-    subgraph DP["Data plane job (speaker DaemonSet)"]
-        C --> D["speaker pods advertise<br/>10.20.0.100 to the LAN"]
-        D --> E{"Advertisement mode?"}
-        E -->|L2Advertisement| F["ARP: one node answers<br/>'10.20.0.100 is at my MAC'"]
-        E -->|BGPAdvertisement| G["BGP: many nodes announce<br/>a route to 10.20.0.100"]
-    end
-    style CP fill:#eef3fb,stroke:#0b3d91
-    style DP fill:#eef8f1,stroke:#1b7a3d
-```
+![MetalLB split into its control-plane (controller) and data-plane (speaker) jobs](assets/diagrams/04-ns-metallb-controller-speaker.png)
 
 The configuration objects that drive this:
 
@@ -231,35 +217,7 @@ Scenario: a user opens `https://tickethub.com/api/orders`. Concrete addresses:
 | `api` Service ClusterIP | `10.96.45.12:80` |
 | Chosen `api` pod | `10.244.22.9` on `worker-gen-2` |
 
-```mermaid
-sequenceDiagram
-    autonumber
-    participant U as User laptop<br/>10.0.5.55
-    participant DNS as DNS server
-    participant SW as LAN switch / router
-    participant SP as MetalLB speaker<br/>(worker-infra-1)
-    participant GW as Gateway Envoy pod<br/>10.244.41.7
-    participant K as Cilium eBPF<br/>(kernel)
-    participant API as api pod<br/>10.244.22.9
-
-    U->>DNS: A? tickethub.com
-    DNS-->>U: 10.20.0.100
-    Note over U,SW: L2/L3 — get the packet onto a node
-    U->>SW: Who has 10.20.0.100? (ARP)
-    SP-->>SW: 10.20.0.100 is at aa:bb:cc:00:00:41
-    U->>SP: TCP SYN → 10.20.0.100:443 (lands on worker-infra-1 NIC)
-    Note over SP,GW: Cilium DNATs the LoadBalancer IP to a Gateway pod
-    SP->>GW: forward to 10.244.41.7:8443
-    Note over U,GW: L7 — TLS + HTTP routing
-    U->>GW: TLS ClientHello (SNI: tickethub.com)
-    GW-->>U: TLS handshake (Envoy terminates, holds the cert)
-    U->>GW: GET /api/orders  Host: tickethub.com
-    GW->>GW: HTTPRoute match: /api/* → api Service
-    Note over GW,API: L3/L4 — ClusterIP to a healthy pod
-    GW->>K: connect 10.96.45.12:80 (ClusterIP)
-    K->>API: eBPF DNAT → 10.244.22.9:8080
-    API-->>U: 200 OK (response retraces the path)
-```
+![North-South packet journey: DNS, ARP, TCP, TLS, HTTP routing, ClusterIP to pod](assets/diagrams/04-ns-packet-journey.png)
 
 Reading the diagram as three phases:
 
@@ -286,33 +244,11 @@ Reading the diagram as three phases:
 
 **L2 mode** — one node owns the IP at a time (failover, not load-share):
 
-```mermaid
-flowchart TD
-    C["Client → 10.20.0.100"] --> SW["LAN switch"]
-    SW -->|"ARP answered by leader"| N1["worker-infra-1 ✅ leader"]
-    SW -.->|"silent (standby)"| N2["worker-infra-2 ⏸"]
-    SW -.->|"silent (standby)"| N3["worker-gen-1 ⏸"]
-    N1 --> GW["Cilium → Gateway pod"]
-    style N1 fill:#eef8f1,stroke:#1b7a3d
-    style N2 fill:#f6f8fa,stroke:#9aa4b2
-    style N3 fill:#f6f8fa,stroke:#9aa4b2
-```
+![L2 mode: one elected leader node answers ARP; the others stay on standby](assets/diagrams/04-ns-l2-mode.png)
 
 **BGP mode** — the router learns the route from many nodes and ECMP-balances across them:
 
-```mermaid
-flowchart TD
-    C["Client → 10.20.0.100"] --> R["BGP router<br/>ECMP over 3 next-hops"]
-    R --> N1["worker-infra-1 ✅"]
-    R --> N2["worker-infra-2 ✅"]
-    R --> N3["worker-gen-1 ✅"]
-    N1 --> GW["Gateway pods"]
-    N2 --> GW
-    N3 --> GW
-    style N1 fill:#eef8f1,stroke:#1b7a3d
-    style N2 fill:#eef8f1,stroke:#1b7a3d
-    style N3 fill:#eef8f1,stroke:#1b7a3d
-```
+![BGP mode: the router ECMP-balances the external IP across several nodes at once](assets/diagrams/04-ns-bgp-mode.png)
 
 !!! warning "L2 failover has a short blackhole"
     When the L2 leader node dies, another speaker must win the election and send a
@@ -333,15 +269,7 @@ rule. When any pod sends a packet to it, Cilium's eBPF program rewrites the dest
 to a **real pod IP** before the packet ever leaves the sending node. There is no proxy
 hop, no `iptables` chain to walk — the translation happens inline in the kernel.
 
-```mermaid
-flowchart LR
-    O["orders pod<br/>10.244.22.9"] -->|"1 DNS query"| D["CoreDNS<br/>10.96.0.10"]
-    D -->|"2 returns ClusterIP<br/>10.96.45.12"| O
-    O -->|"3 connect 10.96.45.12:80"| E["Cilium eBPF<br/>on orders' node"]
-    E -->|"4 eBPF DNAT +<br/>load-balance"| P1["inventory pod A<br/>10.244.31.4"]
-    E -.->|"or"| P2["inventory pod B<br/>10.244.55.8"]
-    style E fill:#f0edfb,stroke:#5b3fa0
-```
+![East-West ClusterIP resolution and eBPF load-balancing to a backend pod](assets/diagrams/04-ew-clusterip.png)
 
 #### 4.8.2 The worked example — Orders → Inventory, every hop
 
@@ -353,41 +281,11 @@ flowchart LR
 | `inventory` ClusterIP | `10.96.45.12:80` |
 | Chosen backend | `inventory` pod `10.244.31.4` on `worker-gen-3` (`10.10.0.23`) |
 
-```mermaid
-sequenceDiagram
-    autonumber
-    participant O as orders pod<br/>10.244.22.9
-    participant KO as Cilium eBPF<br/>(worker-gen-2 kernel)
-    participant DNS as CoreDNS<br/>10.96.0.10
-    participant NET as Node network<br/>10.10.0.0/24
-    participant KI as Cilium eBPF<br/>(worker-gen-3 kernel)
-    participant I as inventory pod<br/>10.244.31.4
-
-    O->>DNS: A? inventory.tickethub.svc.cluster.local
-    DNS-->>O: 10.96.45.12 (ClusterIP)
-    O->>KO: TCP SYN → 10.96.45.12:80
-    Note over KO: eBPF picks a healthy backend<br/>DNAT 10.96.45.12 → 10.244.31.4
-    KO->>NET: encapsulate/route pod→pod<br/>src 10.10.0.22 → dst 10.10.0.23
-    NET->>KI: deliver to worker-gen-3
-    KI->>I: decap → 10.244.31.4:8080
-    I-->>O: 200 OK (reverse path, eBPF un-NATs the source)
-```
+![East-West packet journey: Orders to Inventory across nodes via Cilium eBPF](assets/diagrams/04-ew-packet-journey.png)
 
 #### 4.8.3 Same-node vs cross-node — the two cases
 
-```mermaid
-flowchart TD
-    subgraph SN["Case A — same node (fast path)"]
-        A1["orders pod"] --> A2["eBPF DNAT in kernel"] --> A3["inventory pod<br/>(same node, no wire)"]
-    end
-    subgraph XN["Case B — cross node"]
-        B1["orders pod<br/>worker-gen-2"] --> B2["eBPF DNAT + encap"]
-        B2 -->|"VXLAN/Geneve over<br/>node net 10.10.0.0/24"| B3["worker-gen-3 kernel"]
-        B3 --> B4["decap → inventory pod"]
-    end
-    style SN fill:#eef8f1,stroke:#1b7a3d
-    style XN fill:#eef3fb,stroke:#0b3d91
-```
+![East-West same-node fast path versus cross-node VXLAN/Geneve tunnel](assets/diagrams/04-ew-same-vs-cross-node.png)
 
 - **Same node:** the packet never touches the wire. eBPF hands it straight from the
   caller's veth to the callee's veth — microseconds, no encapsulation.

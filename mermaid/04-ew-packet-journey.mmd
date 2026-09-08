@@ -1,0 +1,17 @@
+sequenceDiagram
+    autonumber
+    participant O as orders pod<br/>10.244.22.9
+    participant KO as Cilium eBPF<br/>(worker-gen-2 kernel)
+    participant DNS as CoreDNS<br/>10.96.0.10
+    participant NET as Node network<br/>10.10.0.0/24
+    participant KI as Cilium eBPF<br/>(worker-gen-3 kernel)
+    participant I as inventory pod<br/>10.244.31.4
+
+    O->>DNS: A? inventory.tickethub.svc.cluster.local
+    DNS-->>O: 10.96.45.12 (ClusterIP)
+    O->>KO: TCP SYN to 10.96.45.12:80
+    Note over KO: eBPF picks a healthy backend<br/>DNAT 10.96.45.12 to 10.244.31.4
+    KO->>NET: encapsulate/route pod to pod<br/>src 10.10.0.22 to dst 10.10.0.23
+    NET->>KI: deliver to worker-gen-3
+    KI->>I: decap to 10.244.31.4:8080
+    I-->>O: 200 OK (reverse path, eBPF un-NATs the source)
