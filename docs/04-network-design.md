@@ -115,6 +115,308 @@ Inside the cluster, **CoreDNS** resolves service names. Every Service gets a sta
       `LoadBalancer` services so you never run out of external IPs.
 
 
+### 4.7 North-South deep dive — the full packet journey
+
+The earlier sections told you *what* the North-South components are. This section
+follows **one HTTP request** from a user's browser all the way to a pod, **layer by
+layer**, so you can debug it when it breaks. We build up from first principles:
+what a LoadBalancer even is, what MetalLB actually does to the packets, and where the
+Gateway fits.
+
+#### 4.7.1 The players are all just pods on your nodes
+
+Nothing here is a magic appliance. Every "component" is software running on your VMs:
+
+| Component | What it really is | Where it runs | Network layer it acts on |
+|-----------|-------------------|---------------|--------------------------|
+| **MetalLB `controller`** | 1 pod — allocates external IPs | any node | control-plane only (no data) |
+| **MetalLB `speaker`** | DaemonSet — 1 pod per node, on host network | every node | **L2 (ARP)** / **L3 (BGP)** |
+| **Gateway (Envoy)** | reverse-proxy pods | infra nodes | **L7 (HTTP/TLS)** |
+| **kube-proxy replacement** | Cilium eBPF in the kernel | every node | **L3/L4** |
+| **CoreDNS** | DNS server pods | any node | **L7 (DNS)** |
+
+!!! key "The one-line mental model"
+    **MetalLB gets the packet onto a node. The Gateway decides which app gets it.
+    Cilium picks the healthy pod.** Three different jobs, three different layers —
+    people fail to debug North-South because they blur them together.
+
+#### 4.7.2 What a `LoadBalancer` Service actually is
+
+In the cloud, this tiny YAML:
+
+```yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: tickethub-gateway
+spec:
+  type: LoadBalancer          # <-- the magic word
+  selector:
+    app: gateway
+  ports:
+    - port: 443
+      targetPort: 8443
+```
+
+makes the cloud provider provision a **real external load balancer** and write its
+public IP back into `.status.loadBalancer.ingress[0].ip`. On **bare metal there is no
+cloud controller**, so that field stays empty forever:
+
+```text
+$ kubectl get svc tickethub-gateway
+NAME                TYPE           EXTERNAL-IP     PORT(S)
+tickethub-gateway   LoadBalancer   <pending>       443:31734/TCP   # stuck!
+```
+
+**MetalLB is the missing cloud controller.** It watches for `type: LoadBalancer`
+Services and does the two things the cloud used to do: (1) hand out an IP, and
+(2) make the physical network deliver that IP to a node.
+
+#### 4.7.3 What MetalLB does, split into its two halves
+
+```mermaid
+flowchart LR
+    subgraph CP["Control plane job (controller pod)"]
+        A["Service type=LoadBalancer<br/>EXTERNAL-IP: pending"] --> B["MetalLB controller<br/>picks 10.20.0.100<br/>from IPAddressPool"]
+        B --> C["Service status updated<br/>EXTERNAL-IP: 10.20.0.100"]
+    end
+    subgraph DP["Data plane job (speaker DaemonSet)"]
+        C --> D["speaker pods advertise<br/>10.20.0.100 to the LAN"]
+        D --> E{"Advertisement mode?"}
+        E -->|L2Advertisement| F["ARP: one node answers<br/>'10.20.0.100 is at my MAC'"]
+        E -->|BGPAdvertisement| G["BGP: many nodes announce<br/>a route to 10.20.0.100"]
+    end
+    style CP fill:#eef3fb,stroke:#0b3d91
+    style DP fill:#eef8f1,stroke:#1b7a3d
+```
+
+The configuration objects that drive this:
+
+```yaml
+apiVersion: metallb.io/v1beta1
+kind: IPAddressPool
+metadata:
+  name: tickethub-pool
+  namespace: metallb-system
+spec:
+  addresses:
+    - 10.20.0.100-10.20.0.200      # the pool from your IP plan
+---
+apiVersion: metallb.io/v1beta1
+kind: L2Advertisement              # or BGPAdvertisement for scale
+metadata:
+  name: tickethub-l2
+  namespace: metallb-system
+spec:
+  ipAddressPools:
+    - tickethub-pool
+```
+
+!!! note "'External IP' is a floating IP, not a NIC address"
+    `10.20.0.100` is **not** configured on any server's network card. It is a virtual
+    address that a speaker *claims* on behalf of the cluster. That is why a node can
+    "own" it one second and hand it to another node the next — nothing is reconfigured
+    on the NIC, only *who answers for it* changes.
+
+#### 4.7.4 The worked example — one request, every hop
+
+Scenario: a user opens `https://tickethub.com/api/orders`. Concrete addresses:
+
+| Thing | Address |
+|-------|---------|
+| User's laptop | `10.0.5.55` (office LAN) |
+| DNS answer for `tickethub.com` | `10.20.0.100` (MetalLB) |
+| Node that wins the ARP election | `worker-infra-1` = `10.10.0.41`, MAC `aa:bb:cc:00:00:41` |
+| Gateway (Envoy) pod | `10.244.41.7` on `worker-infra-1` |
+| `api` Service ClusterIP | `10.96.45.12:80` |
+| Chosen `api` pod | `10.244.22.9` on `worker-gen-2` |
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant U as User laptop<br/>10.0.5.55
+    participant DNS as DNS server
+    participant SW as LAN switch / router
+    participant SP as MetalLB speaker<br/>(worker-infra-1)
+    participant GW as Gateway Envoy pod<br/>10.244.41.7
+    participant K as Cilium eBPF<br/>(kernel)
+    participant API as api pod<br/>10.244.22.9
+
+    U->>DNS: A? tickethub.com
+    DNS-->>U: 10.20.0.100
+    Note over U,SW: L2/L3 — get the packet onto a node
+    U->>SW: Who has 10.20.0.100? (ARP)
+    SP-->>SW: 10.20.0.100 is at aa:bb:cc:00:00:41
+    U->>SP: TCP SYN → 10.20.0.100:443 (lands on worker-infra-1 NIC)
+    Note over SP,GW: Cilium DNATs the LoadBalancer IP to a Gateway pod
+    SP->>GW: forward to 10.244.41.7:8443
+    Note over U,GW: L7 — TLS + HTTP routing
+    U->>GW: TLS ClientHello (SNI: tickethub.com)
+    GW-->>U: TLS handshake (Envoy terminates, holds the cert)
+    U->>GW: GET /api/orders  Host: tickethub.com
+    GW->>GW: HTTPRoute match: /api/* → api Service
+    Note over GW,API: L3/L4 — ClusterIP to a healthy pod
+    GW->>K: connect 10.96.45.12:80 (ClusterIP)
+    K->>API: eBPF DNAT → 10.244.22.9:8080
+    API-->>U: 200 OK (response retraces the path)
+```
+
+Reading the diagram as three phases:
+
+1. **L2/L3 — "get onto a node" (MetalLB's whole job).** DNS returns the floating IP.
+   The laptop ARPs for it; the elected speaker on `worker-infra-1` answers with that
+   node's MAC, so the switch delivers the TCP SYN to that node's real NIC. MetalLB is
+   now **done** — it never looks at TLS or HTTP.
+2. **L7 — "which app?" (the Gateway).** Envoy terminates TLS (it holds the certificate,
+   so backend pods don't have to), reads `Host` + path, and matches an `HTTPRoute`
+   (`/api/* → api`, `/ → frontend`).
+3. **L3/L4 — "which pod?" (Cilium).** The Gateway opens a connection to the `api`
+   **ClusterIP**; Cilium's eBPF rewrites the destination to a specific healthy pod IP
+   and load-balances across replicas.
+
+!!! example "Why the Gateway holds the public-facing IP (your recurring question)"
+    The **Gateway pod** keeps its private pod IP (`10.244.41.7`). It is only
+    *reachable from outside* because its **`LoadBalancer` Service** was given
+    `10.20.0.100` by MetalLB. So "the Gateway is public-facing" really means *the
+    Service in front of the Gateway holds the external IP*. Your backend `api` and
+    `frontend` pods never get an external IP at all — exactly the one-front-door design
+    you expected.
+
+#### 4.7.5 L2 (ARP) mode vs BGP mode, visually
+
+**L2 mode** — one node owns the IP at a time (failover, not load-share):
+
+```mermaid
+flowchart TD
+    C["Client → 10.20.0.100"] --> SW["LAN switch"]
+    SW -->|"ARP answered by leader"| N1["worker-infra-1 ✅ leader"]
+    SW -.->|"silent (standby)"| N2["worker-infra-2 ⏸"]
+    SW -.->|"silent (standby)"| N3["worker-gen-1 ⏸"]
+    N1 --> GW["Cilium → Gateway pod"]
+    style N1 fill:#eef8f1,stroke:#1b7a3d
+    style N2 fill:#f6f8fa,stroke:#9aa4b2
+    style N3 fill:#f6f8fa,stroke:#9aa4b2
+```
+
+**BGP mode** — the router learns the route from many nodes and ECMP-balances across them:
+
+```mermaid
+flowchart TD
+    C["Client → 10.20.0.100"] --> R["BGP router<br/>ECMP over 3 next-hops"]
+    R --> N1["worker-infra-1 ✅"]
+    R --> N2["worker-infra-2 ✅"]
+    R --> N3["worker-gen-1 ✅"]
+    N1 --> GW["Gateway pods"]
+    N2 --> GW
+    N3 --> GW
+    style N1 fill:#eef8f1,stroke:#1b7a3d
+    style N2 fill:#eef8f1,stroke:#1b7a3d
+    style N3 fill:#eef8f1,stroke:#1b7a3d
+```
+
+!!! warning "L2 failover has a short blackhole"
+    When the L2 leader node dies, another speaker must win the election and send a
+    **gratuitous ARP** to re-point the switch. Until switch/neighbor ARP caches update
+    (seconds), traffic to that IP is dropped. BGP reconverges faster and keeps serving
+    from the surviving next-hops — the scale/HA reason to graduate from L2 to BGP.
+
+### 4.8 East-West deep dive — pod-to-pod packet journey
+
+North-South was the *arrivals hall*; **East-West is the far larger internal volume** —
+Orders calling Inventory, everything hitting Redis. There is **no MetalLB and no
+Gateway** here: it is pod → Service DNS → pod, moved entirely by **Cilium's eBPF**.
+
+#### 4.8.1 A ClusterIP is a *virtual* address
+
+`inventory`'s ClusterIP `10.96.45.12` exists on **no NIC anywhere**. It is a kernel-level
+rule. When any pod sends a packet to it, Cilium's eBPF program rewrites the destination
+to a **real pod IP** before the packet ever leaves the sending node. There is no proxy
+hop, no `iptables` chain to walk — the translation happens inline in the kernel.
+
+```mermaid
+flowchart LR
+    O["orders pod<br/>10.244.22.9"] -->|"1 DNS query"| D["CoreDNS<br/>10.96.0.10"]
+    D -->|"2 returns ClusterIP<br/>10.96.45.12"| O
+    O -->|"3 connect 10.96.45.12:80"| E["Cilium eBPF<br/>on orders' node"]
+    E -->|"4 eBPF DNAT +<br/>load-balance"| P1["inventory pod A<br/>10.244.31.4"]
+    E -.->|"or"| P2["inventory pod B<br/>10.244.55.8"]
+    style E fill:#f0edfb,stroke:#5b3fa0
+```
+
+#### 4.8.2 The worked example — Orders → Inventory, every hop
+
+| Thing | Address |
+|-------|---------|
+| Caller: `orders` pod | `10.244.22.9` on `worker-gen-2` (`10.10.0.22`) |
+| DNS name called | `inventory.tickethub.svc.cluster.local` |
+| CoreDNS | `10.96.0.10` |
+| `inventory` ClusterIP | `10.96.45.12:80` |
+| Chosen backend | `inventory` pod `10.244.31.4` on `worker-gen-3` (`10.10.0.23`) |
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant O as orders pod<br/>10.244.22.9
+    participant KO as Cilium eBPF<br/>(worker-gen-2 kernel)
+    participant DNS as CoreDNS<br/>10.96.0.10
+    participant NET as Node network<br/>10.10.0.0/24
+    participant KI as Cilium eBPF<br/>(worker-gen-3 kernel)
+    participant I as inventory pod<br/>10.244.31.4
+
+    O->>DNS: A? inventory.tickethub.svc.cluster.local
+    DNS-->>O: 10.96.45.12 (ClusterIP)
+    O->>KO: TCP SYN → 10.96.45.12:80
+    Note over KO: eBPF picks a healthy backend<br/>DNAT 10.96.45.12 → 10.244.31.4
+    KO->>NET: encapsulate/route pod→pod<br/>src 10.10.0.22 → dst 10.10.0.23
+    NET->>KI: deliver to worker-gen-3
+    KI->>I: decap → 10.244.31.4:8080
+    I-->>O: 200 OK (reverse path, eBPF un-NATs the source)
+```
+
+#### 4.8.3 Same-node vs cross-node — the two cases
+
+```mermaid
+flowchart TD
+    subgraph SN["Case A — same node (fast path)"]
+        A1["orders pod"] --> A2["eBPF DNAT in kernel"] --> A3["inventory pod<br/>(same node, no wire)"]
+    end
+    subgraph XN["Case B — cross node"]
+        B1["orders pod<br/>worker-gen-2"] --> B2["eBPF DNAT + encap"]
+        B2 -->|"VXLAN/Geneve over<br/>node net 10.10.0.0/24"| B3["worker-gen-3 kernel"]
+        B3 --> B4["decap → inventory pod"]
+    end
+    style SN fill:#eef8f1,stroke:#1b7a3d
+    style XN fill:#eef3fb,stroke:#0b3d91
+```
+
+- **Same node:** the packet never touches the wire. eBPF hands it straight from the
+  caller's veth to the callee's veth — microseconds, no encapsulation.
+- **Cross node:** eBPF picks a backend on another node, encapsulates the pod-to-pod
+  packet inside a **VXLAN/Geneve tunnel** addressed node-IP → node-IP
+  (`10.10.0.22 → 10.10.0.23`), and the receiving node decapsulates and delivers it.
+  This is why node-to-node firewall rules must permit the tunnel between all nodes.
+
+!!! key "Why this is faster than classic kube-proxy"
+    Legacy `kube-proxy` programs a long `iptables` chain per Service; every new
+    connection walks rules linearly and scales poorly. Cilium replaces that with an
+    **eBPF hash-table lookup** in the kernel — O(1) regardless of Service count — and
+    can do **DSR** (direct server return) so replies skip the ingress node entirely.
+
+!!! mental "Mental model — internal phone directory"
+    East-West is a company's **internal phone system**. **CoreDNS** is the directory
+    ("what's Inventory's extension?" → the ClusterIP). **Cilium eBPF** is the switchboard
+    that instantly connects you to whichever Inventory desk is free — you dial one
+    stable extension and never care which physical desk answers.
+
+!!! warning "East-West gotchas"
+    - **A ClusterIP never leaves the cluster.** Trying to curl `10.96.45.12` from your
+      laptop will always fail — it is only meaningful inside a node's kernel.
+    - **Long-lived connections don't rebalance.** eBPF load-balances *per connection*.
+      A persistent gRPC/HTTP2 stream to a ClusterIP sticks to one backend pod until it
+      closes — scale-outs won't relieve a hot stream until clients reconnect.
+    - **DNS TTLs bite.** Some runtimes cache the ClusterIP; if a Service is recreated
+      with a new ClusterIP, cached callers break until they re-resolve.
+
 ### 4.5 Nuances, Gotchas & Architect Considerations
 
 !!! tip "Nuances — subtle behaviours to internalise"
